@@ -1,0 +1,283 @@
+Here’s the full business layout and an agentic workforce scaffold that makes Tap919 Middleman a weapon inside the 3‑company stack and supports a billion‑in‑120‑days narrative.
+
+***
+
+## 1. Business Layout: Who Buys What
+
+Think in 3 layers: **Product surface**, **Revenue engine**, **Strategic lock‑in**.
+
+### Core products
+
+- Tap919 Middleman (this gateway)
+  - Product: Metered AI/API gateway for agents and tools, fronted by Cloudflare Worker.
+  - Buyers: AI agencies, AI SaaS builders, ecom brands with agents, internal LLM platform teams.
+  - Value: Usage‑based billing, multi‑provider routing, “future monopoly prevention” (no direct vendor lock‑in). [stripe](https://stripe.com/resources/more/usage-based-pricing-for-saas-how-to-make-the-most-of-this-pricing-model)
+
+- StreetCode (TapIDE)
+  - Product: AI agent/IDE “studio” where builders design, debug, and deploy agents, workflows, and MCP tools.
+  - Buyers: indie devs, agencies, internal teams.
+  - Value: Every run goes through Middleman; IDE shows live credit burn and latency.
+
+- BlackMind
+  - Product: Heavy‑compute models and CRISPR‑style agent editing (think “surgical brain edits” and advanced reasoning bundles).
+  - Buyers: high‑value verticals (trading, healthcare‑adjacent, operations).
+  - Value: Specialized, high‑margin model SKUs exposed as `tap919:*` model IDs metered by Middleman.
+
+- AetherDesk
+  - Product: Control tower for operators and clients: usage analytics, guardrails, cost controls, and live session review.
+  - Buyers: teams running agents in production.
+  - Value: Observability and governance for everything Middleman sees.
+
+This layout follows the pattern of modern API/usage‑based SaaS stacks: core API, builder surface, specialized engines, and an admin/finance lens. [maxio](https://www.maxio.com/blog/consumption-based-billing)
+
+### Revenue model
+
+- Pricing axes:
+  - Per API call (simple event‑based usage). [billingplatform](https://billingplatform.com/blog/usage-based-pricing-examples)
+  - Per 1k tokens (LLM‑native metric). [ordwaylabs](https://ordwaylabs.com/resources/guides/usage-based-pricing-guide/)
+  - Per “agent task” or CRISPR edit (higher‑order events).
+
+- Plan structure:
+  - Free:
+    - Limited calls per month, limited `tap919:*` models.
+  - Pro:
+    - Higher limits, more models, priority routing, basic AetherDesk console.
+  - Enterprise:
+    - Custom SLAs, on‑prem / VPC Middleman, policy engine, advanced XAI, guaranteed routing rules.
+
+This aligns with standard usage‑based + tiered hybrid models that let you start small and scale hard. [withorb](https://www.withorb.com/blog/usage-based-pricing-for-saas)
+
+***
+
+## 2. Agentic Workforce: Core Agent Roles
+
+Everything we build should be callable as an agent “track” via the Shared Protocol Layer. Below is the initial roster.
+
+### 1) Lane Architect (Strategy / Design Agent)
+
+- Job:
+  - Design new agent blueprints, pricing lanes, and offers across StreetCode, BlackMind, AetherDesk.
+- Inputs:
+  - Usage data from Middleman.
+  - Market intel, pricing models, competitor docs. [blog.axway](https://blog.axway.com/learning-center/apis/enterprise-api-strategy/api-monetization-models)
+- Outputs:
+  - JSON specs for:
+    - New `tap919:` model IDs.
+    - New pricing tiers (per‑call, per‑token, per‑task).
+    - Content prompts for marketing and docs.
+- Trigger:
+  - Weekly or on demand when we see a profitable usage pattern.
+
+### 2) Middleman Router (Real‑Time API Agent)
+
+- Job:
+  - For each request, choose which underlying provider or local model to hit (OpenAI, Anthropic, NVIDIA, internal).
+- Inputs:
+  - Model ID + tenant policy + performance/price history. [nordicapis](https://nordicapis.com/9-types-of-api-monetization-models/)
+- Outputs:
+  - Selected provider.
+  - Updated routing weights.
+  - Log entry explaining “why” for XAI.
+- Trigger:
+  - For every `execute` call; runs inside the Middleman layer.
+
+### 3) Billing & Metering Clerk (Revenue Agent)
+
+- Job:
+  - Turn `UsageEvent`s into Stripe meter updates and invoices. [stripe](https://stripe.com/resources/more/usage-metering)
+- Inputs:
+  - Usage events from Middleman (tokens, calls, tasks).
+  - Tenant plan and Stripe customer mapping.
+- Outputs:
+  - Stripe API calls:
+    - Usage records for metered billing.
+    - Invoice drafts or final invoices.
+  - Alerts when spend crosses thresholds or anomalies appear.
+- Trigger:
+  - On each usage event, plus hourly batch reconciliation.
+
+### 4) Telemetry Analyst (Observability Agent)
+
+- Job:
+  - Read OTEL traces and DB logs to detect:
+    - High latency.
+    - Error spikes.
+    - Bad cost/latency tradeoffs. [screenshotone](https://screenshotone.com/blog/cloudflare-workers/)
+- Inputs:
+  - OTEL traces from FastAPI and DB.
+  - SQL over UsageEvent and PricingRule.
+- Outputs:
+  - Routing recommendations (shift traffic).
+  - Incident alerts to AetherDesk.
+  - “Highlight reels” for content (what went right/wrong).
+- Trigger:
+  - Continuous or batched; plus on deploy events.
+
+### 5) StreetCode Session Producer (IDE Agent)
+
+- Job:
+  - Turn user intent in StreetCode into:
+    - Agent graphs that call Middleman.
+    - Scaffolds for MCP tools, runbooks, and doc pages.
+- Inputs:
+  - IDE actions, error logs, prior sessions.
+- Outputs:
+  - Capability definitions like `sc.agent.run`, `sc.code.generate` that call `tap919` models.
+- Trigger:
+  - When a builder creates or updates agents in StreetCode.
+
+### 6) BlackMind CRISPR Designer (Model/Brain Agent)
+
+- Job:
+  - Generate and refine CRISPR‑style patches to agents/models.
+- Inputs:
+  - Logs of failures / suboptimal behavior.
+  - Domain constraints.
+- Outputs:
+  - Patch diffs, evaluation runs, updated `tap919:` model SKUs.
+- Trigger:
+  - On poor performance, high error rates, or explicit user requests.
+
+### 7) AetherDesk Operator Copilot (Support Agent)
+
+- Job:
+  - Help human operators:
+    - Explain usage spikes.
+    - Adjust policies.
+    - Communicate changes to customers.
+- Inputs:
+  - Usage views, incidents, planned changes.
+- Outputs:
+  - Suggested policy updates, email drafts, release notes.
+- Trigger:
+  - When anomalies or feature launches occur.
+
+***
+
+## 3. Agent Interfaces: Capability Registry Scaffolds
+
+Everything is controlled via capabilities that agents can call.
+
+### Middleman capabilities
+
+- `tm.middleman.execute`
+  - Input: `{ tenant_id, model_id, input, params }`
+  - Output: `{ output, usage: { units, unit_type, cost_estimate } }`
+  - Backed by: `POST /internal/execute`.
+
+- `tm.middleman.quote`
+  - Input: `{ model_id, estimated_tokens }`
+  - Output: `{ unit_price, unit_type, estimated_cost }`
+  - Backed by: `GET /internal/quote`.
+
+- `tm.middleman.models`
+  - Input: `{}`
+  - Output: list of models and metadata.
+  - Backed by: `GET /internal/models`.
+
+### Billing capabilities
+
+- `tm.billing.sync_stripe`
+  - Input: usage batch.
+  - Output: success/failure, Stripe IDs.
+
+- `tm.billing.generate_invoice_preview`
+  - Input: `{ tenant_id, window }`
+  - Output: estimated bill, broken down by model and lane. [drivetrain](https://www.drivetrain.ai/post/usage-based-pricing)
+
+### Routing & policy capabilities
+
+- `tm.routing.score_providers`
+  - Input: recent latencies, error rates, costs.
+  - Output: new routing weights and justification.
+
+- `tm.policy.enforce`
+  - Input: `{ tenant_id, request_meta }`
+  - Output: allowed/blocked + transformed call if needed.
+
+These map the fast API + worker infrastructure into a programmable “brain” for our AI workforce.
+
+***
+
+## 4. Org‑Level Layout: Agent Crews by Lane
+
+We can think of this as four “crews,” each with human + agent roles.
+
+### Crew 1: Monetization Lane
+
+- Agents:
+  - Lane Architect.
+  - Billing & Metering Clerk.
+- Human:
+  - You as Chief Producer (deciding which lanes matter).
+- KPIs:
+  - MRR and net revenue per abstract model.
+  - Gross margin per model/provider.
+  - Time from idea → live priced model. [stripe](https://stripe.com/resources/more/usage-based-pricing-for-saas-how-to-make-the-most-of-this-pricing-model)
+
+### Crew 2: Reliability & Routing Lane
+
+- Agents:
+  - Middleman Router.
+  - Telemetry Analyst.
+- KPIs:
+  - P95 latency per tenant/model.
+  - Error rate peaks and time to detect.
+  - Cost per successful task vs alternatives. [screenshotone](https://screenshotone.com/blog/cloudflare-workers/)
+
+### Crew 3: Builder Lane (StreetCode)
+
+- Agents:
+  - StreetCode Session Producer.
+  - BlackMind CRISPR Designer.
+- KPIs:
+  - # of active agents built and deployed.
+  - Conversion from “idea in IDE” to “running in production.”
+  - Average revenue per deployed agent.
+
+### Crew 4: Operator & Client Lane (AetherDesk)
+
+- Agents:
+  - AetherDesk Operator Copilot.
+  - Billing & Policy explainer.
+- KPIs:
+  - Churn and retention (agency and brand accounts).
+  - Average ticket size and resolution time.
+  - NPS / satisfaction with observability and control.
+
+***
+
+## 5. 120‑Day Execution Bands (High Level)
+
+We plug the agentic scaffold into your 120‑day war plan like this:
+
+- Days 0–30:
+  - Middleman live with basic agents:
+    - Middleman Router (simple heuristics).
+    - Billing Clerk (logs → CSV, Stripe manual).
+  - StreetCode sends all executions through Worker → Middleman.
+- Days 30–60:
+  - Stripe metering live.
+  - Operator console (AetherDesk) v1 live.
+  - Telemetry Analyst agent and basic policy enforcement online.
+- Days 60–90:
+  - Multi‑provider routing.
+  - Lane Architect agent proposing new `tap919:` SKUs weekly based on real usage. [billingplatform](https://billingplatform.com/blog/usage-based-pricing-examples)
+- Days 90–120:
+  - Fully agentic revenue operations:
+    - Agents propose pricing changes, bundles, and experiments.
+    - Humans approve/deny in a simple change management interface.
+
+Everything revolves around one loop: **Middleman data → agents propose → humans approve → system reconfigures live**.
+
+***
+
+## 6. Immediate To‑Do: Turn This Into JSON Specs
+
+To make this real next, I’d propose we:
+
+- Pick 3–5 of the above agents to instantiate first (names + capabilities).
+- Define their capability signatures as JSON that the Shared Protocol Layer can call.
+- Wire at least one of them (Billing Clerk or Telemetry Analyst) to the running Middleman service as soon as it’s live.
+
+Which crew do you want to stand up first: **Monetization Lane (billing/pricing)**, **Routing/Telemetry Lane**, or **Builder Lane (StreetCode + BlackMind)**?  
