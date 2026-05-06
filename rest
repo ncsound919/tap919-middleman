@@ -1,0 +1,336 @@
+To actually run this thing end‑to‑end, you need: missing Python glue (.env, startup, scripts), DB wiring, and then a clean run command or container. Here’s everything, no hand‑waving.
+
+***
+
+## 1. Add a `.env` file
+
+Create `.env` in the repo root (same level as `Dockerfile` and `requirements.txt`):
+
+```env
+# --- Core app config ---
+ENV=dev
+
+# SQLite local dev (file in project root)
+DATABASE_URL=sqlite:///./middleman.db
+
+# For Postgres later, you’d use something like:
+# DATABASE_URL=postgresql+psycopg2://user:password@db-host:5432/middleman
+
+# --- OpenTelemetry / Observability ---
+# Point this to your collector (Tempo, Honeycomb, OTEL sidecar, etc.)
+# Leave blank to disable tracing locally.
+OTEL_EXPORTER_OTLP_ENDPOINT=
+
+# --- Middleman service info (optional today, useful later) ---
+SERVICE_NAME=tap919-middleman
+SERVICE_PORT=8000
+```
+
+Using `.env` like this is standard practice with `python-dotenv` and keeps secrets/config out of code. [geeksforgeeks](https://www.geeksforgeeks.org/python/using-python-environment-variables-with-python-dotenv/)
+
+***
+
+## 2. Load `.env` on startup
+
+Update `app/db.py` and `app/main.py` to load environment variables automatically.
+
+### 2.1. Patch `app/db.py`
+
+At the top of `app/db.py`, before you read `DATABASE_URL`:
+
+```python
+# app/db.py
+import os
+from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+
+# Load .env once at import time
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./middleman.db")
+
+connect_args = {}
+if DATABASE_URL.startswith("sqlite"):
+    connect_args = {"check_same_thread": False}
+
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+Base = declarative_base()
+
+def init_db():
+    from app import models  # noqa: F401
+    Base.metadata.create_all(bind=engine)
+```
+
+This mirrors how `python-dotenv` is normally used to load config from `.env`. [pypi](https://pypi.org/project/python-dotenv/)
+
+### 2.2. Patch `app/main.py` to honor env
+
+At the top of `app/main.py`:
+
+```python
+# app/main.py
+import os
+from datetime import datetime
+
+from dotenv import load_dotenv
+from fastapi import FastAPI, Header, HTTPException
+from fastapi.responses import JSONResponse
+from opentelemetry import trace
+
+from app import crud, telemetry
+from app.adapters.mock_provider import call_mock_provider
+from app.db import init_db
+from app.schemas import ExecuteRequest
+
+# Load env first
+load_dotenv()
+
+# Initialize DB + Tracing
+init_db()
+telemetry.init_tracing(app=None)
+
+app = FastAPI(title="Tap919 Middleman API", version="0.1.0")
+```
+
+This keeps config centralized and repeatable across environments. [geeksforgeeks](https://www.geeksforgeeks.org/python/using-python-environment-variables-with-python-dotenv/)
+
+***
+
+## 3. Add a `pyproject.toml` (optional but nice)
+
+Not required, but for a cleaner Python project, drop this in root:
+
+```toml
+[project]
+name = "tap919-middleman"
+version = "0.1.0"
+description = "Tap919 Middleman — Monetizable, observable API gateway between agents and providers."
+authors = [{ name = "Overlay Eco" }]
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.black]
+line-length = 100
+
+[tool.isort]
+profile = "black"
+```
+
+You can leave `dependencies` empty because `requirements.txt` is your deploy surface.
+
+***
+
+## 4. Development run scripts
+
+### 4.1. Local Python environment
+
+From repo root:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+This uses the usual FastAPI + uvicorn pattern for local development. [fastapi.tiangolo](https://fastapi.tiangolo.com/deployment/manually/)
+
+### 4.2. Run the API
+
+With `.venv` activated and `.env` present:
+
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+- API base: `http://localhost:8000`
+- Docs: `http://localhost:8000/docs` (interactive Swagger) [fastapi.tiangolo](https://fastapi.tiangolo.com/tutorial/first-steps/)
+
+Endpoints you should see in docs:
+- `GET /internal/models`
+- `GET /internal/quote`
+- `GET /internal/ping`
+- `POST /internal/execute`
+
+***
+
+## 5. Seed some pricing data (optional)
+
+Right now `PRICING` in `main.py` is in‑memory and `meter_usage` falls back to 0 if there is no DB rule. If you want prices to come from DB instead, you can add a simple seed script.
+
+Create `scripts/seed_pricing.py`:
+
+```python
+# scripts/seed_pricing.py
+import os
+from dotenv import load_dotenv
+from sqlalchemy.orm import Session
+
+from app.db import init_db, SessionLocal
+from app import models
+
+load_dotenv()
+init_db()
+
+PRICING = {
+    "affiliate:gpt4-mini": {
+        "unit_price": 0.002,
+        "unit_type": "per_1k_tokens",
+        "provider": "openai",
+    },
+    "affiliate:replicate-gpu": {
+        "unit_price": 0.01,
+        "unit_type": "per_1k_tokens",
+        "provider": "replicate",
+    },
+    "tap919:blackmind-lite": {
+        "unit_price": 5.0,
+        "unit_type": "per_task",
+        "provider": "tap919",
+    },
+}
+
+def main():
+    session: Session = SessionLocal()
+    try:
+        for model, rule in PRICING.items():
+            existing = (
+                session.query(models.PricingRule)
+                .filter(models.PricingRule.model == model)
+                .first()
+            )
+            if existing:
+                existing.unit_price = rule["unit_price"]
+                existing.unit_type = rule["unit_type"]
+                existing.provider = rule["provider"]
+            else:
+                session.add(
+                    models.PricingRule(
+                        model=model,
+                        unit_price=rule["unit_price"],
+                        unit_type=rule["unit_type"],
+                        provider=rule["provider"],
+                    )
+                )
+        session.commit()
+        print("Seeded pricing rules.")
+    finally:
+        session.close()
+
+if __name__ == "__main__":
+    main()
+```
+
+Then run:
+
+```bash
+python -m scripts.seed_pricing
+```
+
+Now `meter_usage` will compute non‑zero `cost_estimate` based on DB rules.
+
+***
+
+## 6. Health check smoke test
+
+Once `uvicorn` is running:
+
+- Hit: `GET http://localhost:8000/internal/ping`
+  - You should see `{ "status": "ok", "models": [...], "timestamp": ... }`
+
+- Hit: `GET http://localhost:8000/internal/models`
+  - You should see the three models defined in `PRICING`.
+
+- Hit: `GET http://localhost:8000/internal/quote?model=tap919:blackmind-lite`
+  - You should get the correct `unit_price`, `unit_type`, `provider`.
+
+- Hit: `POST http://localhost:8000/internal/execute` with JSON body:
+
+```json
+{
+  "model": "affiliate:gpt4-mini",
+  "input": "Test the Tap919 middleman.",
+  "params": {}
+}
+```
+
+- Response should contain `output` plus `usage.units`, `usage.unit_type`, `usage.cost_estimate`.
+
+The patterns used here (Uvicorn run, FastAPI routes, etc.) align with the standard FastAPI quickstart guides. [tutorialspoint](https://www.tutorialspoint.com/fastapi/fastapi_uvicorn.htm)
+
+***
+
+## 7. Dockerized run
+
+You already have the `Dockerfile` from the previous answer; with `.env` now added, you can run it containerized.
+
+### 7.1. Build the image
+
+From repo root:
+
+```bash
+docker build -t tap919-middleman:dev .
+```
+
+This follows typical FastAPI + Docker guidance: copy app, install requirements, run uvicorn. [seenode](https://seenode.com/blog/deploy-fastapi-docker-and-uvicorn)
+
+### 7.2. Run locally with SQLite
+
+```bash
+docker run --rm -p 8000:8000 \
+  --env-file .env \
+  tap919-middleman:dev
+```
+
+- The container reads `.env` for `DATABASE_URL` and `OTEL_EXPORTER_OTLP_ENDPOINT`.
+- Same URLs as local dev: `http://localhost:8000/docs`, `/internal/ping`, etc.
+
+If you later switch to Postgres, just change `DATABASE_URL` in `.env` to point to your DB service.
+
+***
+
+## 8. What to commit to the repo
+
+You should now have, in `tap919-middleman`:
+
+- `app/` with:
+  - `__init__.py`
+  - `main.py`
+  - `db.py`
+  - `models.py`
+  - `schemas.py`
+  - `crud.py`
+  - `telemetry.py`
+  - `adapters/__init__.py`
+  - `adapters/mock_provider.py`
+- `scripts/seed_pricing.py`
+- `.env` (usually **NOT** committed; add to `.gitignore`)
+- `.gitignore` (already there)
+- `requirements.txt`
+- `Dockerfile`
+- `pyproject.toml` (optional)
+- `README.md` (you can update with “how to run” instructions above)
+
+Then:
+
+```bash
+git add app scripts Dockerfile requirements.txt pyproject.toml README.md
+git commit -m "chore: add tap919 middleman FastAPI service"
+git push origin main
+```
+
+***
+
+## 9. Next step: wiring your Worker
+
+Once this is committed and you’ve confirmed `/internal/*` works, I can give you:
+
+- A Cloudflare Worker script that:
+  - Exposes `/v1/models`, `/v1/price`, `/v1/agent/ping`, `/v1/execute`
+  - Proxies to this FastAPI middleman with appropriate headers (`x-tenant-id`)
+- Any JSON‑LD storefront config you want for the front of house.
+
+Do you want to run this behind SQLite for now, or do you want me to assume Postgres (e.g., Supabase or Neon) and give you the DB connection + docker‑compose wiring too?
