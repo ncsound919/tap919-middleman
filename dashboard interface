@@ -1,0 +1,270 @@
+Design it like a **producer’s control room**: one screen, multiple lanes, and everything clickable so you can *change* the system, not just watch it. Below is a concrete layout you can build as a local web app or Electron dashboard.
+
+***
+
+## Layout: One Screen, Four Lanes
+
+Think four horizontal “strips” stacked on your laptop screen:
+
+- Lane 1: **Money & Growth**
+- Lane 2: **Traffic, Agents, & Quality**
+- Lane 3: **Security & Risk**
+- Lane 4: **Ops, Outreach, & Build Progress**
+
+Each lane has:
+- 2–4 **headline tiles**.
+- 1 **interactive control** (dropdown, toggle, slider, or button).
+- 1 **detail panel** you can expand.
+
+Dashboards that tie finance, product, and customer metrics drive better decisions than siloed views. [opexengine](https://www.opexengine.com/post/the-top-10-saas-metrics-every-ceo-must-track-for-growth-and-profitability)
+
+***
+
+## Lane 1 – Money & Growth (Top Strip)
+
+Purpose: Show “Is this a business?” and let you *steer* pricing and focus.
+
+Key tiles:
+
+- Live MRR / Usage Revenue
+  - Shows:
+    - MRR and last 30 days of usage revenue (Middleman + Stripe). [phoenixstrategy](https://www.phoenixstrategy.group/blog/saas-dashboard-design-metrics-ceos-need)
+  - Interaction:
+    - Click to drill into:
+      - By lane (`tap919:` model IDs).
+      - By customer segment (agency, ecom, indie).
+
+- Net Revenue Churn / Expansion
+  - Shows:
+    - 30‑day net revenue churn (%).
+    - Expansion vs contraction for existing tenants. [productled](https://www.productled.org/foundations/product-led-growth-metrics)
+  - Interaction:
+    - Toggle view:
+      - “By segment.”
+      - “By lane.”
+
+- Top 5 Revenue Lanes
+  - Shows:
+    - Which `tap919:` models are making the most money:
+      - e.g., `tap919:blackmind-lite`, `affiliate:gpt4-mini`.
+  - Interaction:
+    - Turn each lane on/off for **prominence** in marketing & pricing experiments (writes into a “promote” flag in PricingRule).
+
+Interactive controls:
+
+- **Pricing Experiment Selector**
+  - Control:
+    - Dropdown with active experiments:
+      - “Lane A price up 10%.”
+      - “Lane B price down 20%.”
+      - “Bundle X vs Bundle Y.”
+  - Action:
+    - Select experiment → dashboard writes an “experiment config” into DB:
+      - Adjusts PricingRule(s).
+      - Sets start/end dates.
+  - Why:
+    - Usage‑based winners run regular, controlled pricing experiments and watch their metrics. [schematichq](https://schematichq.com/blog/why-usage-based-billing-is-taking-over-saas)
+
+***
+
+## Lane 2 – Traffic, Agents, & Quality
+
+Purpose: Show **agent execution health**, volume, and how agents are behaving.
+
+Key tiles:
+
+- Request Volume & Error Rate
+  - Shows:
+    - Request throughput (per minute/hour) across `/internal/execute` and `/v1/execute`.
+    - Error rate with short history. [dotcom-monitor](https://www.dotcom-monitor.com/blog/api-observability-tools/)
+  - Interaction:
+    - Click to filter by:
+      - Tenant.
+      - Lane.
+      - Region.
+
+- Latency Bands
+  - Shows:
+    - p50, p95, p99 latency for key endpoints. [levo](https://www.levo.ai/resources/blogs/top-10-api-monitoring-tools-2026)
+  - Interaction:
+    - Slider to adjust your **SLO target** (e.g., p95 under 800 ms).
+    - When you drag the target, agents can:
+      - Propose routing changes (e.g., move more traffic to faster provider).
+
+- Active Agents & Failures
+  - Shows:
+    - Number of active agents (StreetCode + BlackMind) in last 24 hours.
+    - Top failing agent workflows (by error count).
+  - Interaction:
+    - Click an agent → open a side panel that:
+      - Offers a `bm.crispr.propose_patch` button to generate a patch plan.
+
+Interactive controls:
+
+- **Routing Mode Switch**
+  - Control:
+    - Toggle between:
+      - “Cheapest route.”
+      - “Balanced.”
+      - “Fastest route.”
+  - Action:
+    - Updates a `routing_mode` setting that Middleman Router agent reads and uses to call `tm.routing.score_providers`.
+  - Why:
+    - API/platform teams use SLOs and routing strategies to juggle cost vs performance; you need the same lever in one click. [blog.cloudflare](https://blog.cloudflare.com/api-gateway/)
+
+***
+
+## Lane 3 – Security & Risk
+
+Purpose: Constantly watch **“Are we safe?”** from abuse, incidents, and compliance.
+
+Key tiles:
+
+- Auth & Key Abuse
+  - Shows:
+    - Total keys.
+    - Keys with anomalous usage (volume spikes, geolocation weirdness).
+    - Suspicious IPs or countries.
+  - Interaction:
+    - Click a key → quick actions:
+      - “Lock key.”
+      - “Throttle key.”
+      - “Flag for investigation.”
+
+- Incident Feed
+  - Shows:
+    - Stream of:
+      - Downtime alerts.
+      - Latency SLO breaches.
+      - Security anomalies.
+    - Color‑coded severity. [dotcom-monitor](https://www.dotcom-monitor.com/blog/api-observability-tools/)
+  - Interaction:
+    - Click an incident:
+      - See related traces (link to OTEL viewer).
+      - See “suggested actions” from telemetry agent.
+
+- Compliance/Policy Posture
+  - Shows:
+    - Simple statuses:
+      - “PII handling: OK/warn.”
+      - “Data locality: OK/warn.”
+  - Interaction:
+    - Button to tighten default policies:
+      - e.g., “Block US→EU traffic for tenant group X.”
+
+Interactive controls:
+
+- **Threat Level Slider**
+  - Control:
+    - Slider from:
+      - “Relaxed.”
+      - “Normal.”
+      - “Paranoid.”
+  - Action:
+    - Adjusts rate limits, anomaly thresholds, and auth strictness:
+      - Writes into a `security_profile` table that Middleman and Worker check.
+  - Why:
+    - API monitoring tools emphasize real‑time detection and anomaly‑based risk; you want a simple, top‑level control instead of manual config editing. [levo](https://www.levo.ai/resources/blogs/top-10-api-monitoring-tools-2026)
+
+***
+
+## Lane 4 – Ops, Outreach, Dev Progress
+
+Purpose: Show how **build, outreach, and support** are moving.
+
+Key tiles:
+
+- Dev Progress & Releases
+  - Shows:
+    - Number of deployed versions in last 30 days.
+    - Next planned release.
+    - Key TODO count from GitHub (mapped to your 120‑day roadmap).
+  - Interaction:
+    - Button to:
+      - Trigger a specific deployment (e.g., “Promote staging → prod”).
+      - Mark milestones as done (updates a `milestones` table).
+
+- Outreach & Orders
+  - Shows:
+    - Number of:
+      - Active agency conversations.
+      - Trial accounts created.
+      - Runner signups (affiliates).
+  - Interaction:
+    - Click each segment:
+      - See accounts and last touch.
+      - Button: “Assign to Runner” or “Send follow‑up.”
+
+- Runner / Affiliate Panel
+  - Shows:
+    - Total active Runners.
+    - Top 5 by:
+      - New tenants.
+      - Commission.
+  - Interaction:
+    - Button: “Boost runner”:
+      - Adjusts their commission tier.
+      - Generates an updated `tm.affiliate.generate_runner_kit` for them.
+
+Interactive controls:
+
+- **Content Flywheel Control**
+  - Control:
+    - Two buttons:
+      - “Generate morning technical post.”
+      - “Generate evening story post.”
+  - Action:
+    - Calls content agent with:
+      - Latest usage trends, successes, and incidents.
+      - Produces polished text you can post.
+  - Why:
+    - Keeping daily content aligned with product metrics is a known PLG tactic; you’re baking it into your dashboard. [productled](https://www.productled.org/foundations/product-led-growth-metrics)
+
+***
+
+## Cross‑Cutting: Money Tracking & Deep Insights
+
+Across all lanes, include a **Right‑side collapsible panel** with:
+
+- Cash & Runway Snapshot
+  - Pull from:
+    - Stripe MRR.
+    - Bank balance (manually entered or connected).
+  - Show:
+    - Runway at current burn.
+    - “What if” slider: change spend/growth; see runway update.
+
+- Cohort & Product Metrics
+  - Core SaaS metrics: ARR/MRR, NRR, CAC, payback, LTV, activation. [gainsight](https://www.gainsight.com/essential-guide/product-management-metrics/enterprise-product-metrics/)
+  - Simple views:
+    - New signups vs active users vs active companies. [ofspace](https://www.ofspace.co/blog/saas-dashboard)
+    - Time‑to‑first‑value and retention for each lane.
+
+- “Insights” feed
+  - Populated by agents that run nightly:
+    - “Lane X has 2x better conversion than Lane Y; raise prices by 10%.”
+    - “Agency cohort ABC has rising error rates on provider Z.”
+    - “Runner R3 is underpaid relative to revenue generated; consider tier bump.”
+  - Each insight has:
+    - “Apply” button → writes changes (e.g., updates PricingRule, security_profile, or affiliate tier).
+
+***
+
+## Implementation Shape
+
+To keep it all running on your laptop screen:
+
+- Tech:
+  - Single‑page app (React or Svelte) running locally or via a small Electron shell.
+  - Backend:
+    - Using your Middleman DB + Stripe + GitHub + your OTEL backend as data sources.
+- Feeds:
+  - REST endpoints in Middleman or a sibling “Control API” that expose:
+    - Aggregated metrics for tiles.
+    - Actions (mutations) the dashboard can trigger.
+- Agents:
+  - Triggered by:
+    - Button clicks (imperative).
+    - Schedulers (nightly analytic jobs).
+
+If you want, next I can break this down into **specific API endpoints and DB queries** you’ll need to power each tile and control, so you can treat the dashboard itself as just another Tap919 client hooked into Middleman and the registry.  
