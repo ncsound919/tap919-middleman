@@ -1,0 +1,218 @@
+Here’s a focused stack: tools you’ll likely need to run Tap919 (Middleman + StreetCode + BlackMind + AetherDesk + Runner affiliate system), what they do, and whether you can realistically replace them with your own builds.
+
+***
+
+## Core Cloud & Runtime
+
+- Cloud provider (primary compute)
+  - Examples: AWS, GCP, Azure, Fly.io.
+  - Function: Run Middleman (FastAPI), databases, background workers, dashboards.
+  - Replaceable?: In theory with your own bare‑metal or colocation, but not worth it in the 120‑day window; use managed cloud.
+
+- Edge platform
+  - Example: Cloudflare Workers. [screenshotone](https://screenshotone.com/blog/cloudflare-workers/)
+  - Function: Edge gateway in front of Middleman (auth, routing, rate limits, affiliate link handling, low‑latency API façade).
+  - Replaceable?: You could build an Nginx/Lua or Envoy‑based edge in front of your core, but Cloudflare gives global PoPs, DNS, and WAF instantly; keep it.
+
+- Container runtime / orchestration
+  - Examples: Docker, Docker Compose, maybe a light Kubernetes (or ECS/Fargate).
+  - Function: Package and deploy Middleman, background workers, possibly BlackMind services.
+  - Replaceable?: You *could* script everything with raw VMs, but containers are standard; don’t rebuild.
+
+***
+
+## Data & Storage
+
+- Primary database
+  - Examples: Postgres via Supabase, Neon, RDS, or similar.
+  - Function: Store Tenants, API keys, PricingRules, UsageEvents, Affiliates, Payouts.
+  - Replaceable?: You could build on SQLite only, but Postgres is the right long‑term call; building your own DB is a hard no.
+
+- Analytics / warehouse (optional but strong)
+  - Examples: BigQuery, Snowflake, or Postgres + DuckDB for analytics.
+  - Function: Deeper usage analysis, cost modeling, cohort tracking.
+  - Replaceable?: You can roll simple analytics as SQL over Postgres; full warehouse not required day 0.
+
+- Object storage
+  - Examples: S3, Cloudflare R2, Backblaze B2.
+  - Function: Store logs, exports, runner kits, static marketing/media assets.
+  - Replaceable?: You could serve from GitHub + CDN, but proper object storage is cheap and robust.
+
+***
+
+## Billing, Payments & Accounting
+
+- Payment processor
+  - Example: Stripe.
+  - Function: Take card payments, manage customers, invoices, payouts, disputes.
+  - Replaceable?: You *could* integrate directly with networks or use crypto, but Stripe is de facto; do not rebuild payments.
+
+- Billing/usage system
+  - Using Stripe Billing for usage‑based pricing. [stripe](https://stripe.com/resources/more/usage-based-pricing-strategy-for-saas)
+  - Function: Metered billing, recurring invoices, trials, proration.
+  - Replaceable?: You’re partially replacing “usage logic” with Middleman, but Stripe still handles invoicing and financial compliance; you shouldn’t rebuild invoices and tax logic.
+
+- Accounting / books
+  - Examples: QuickBooks, Xero.
+  - Function: Track expenses, revenue, taxes, financial reports.
+  - Replaceable?: Self‑built is a tax nightmare; integrate your Stripe/PayPal exports and usage data instead.
+
+***
+
+## Observability & Monitoring
+
+- Logs and metrics
+  - Examples: Grafana Cloud, Datadog, Logtail, or ELK stack.
+  - Function: System logs, performance metrics, alerts.
+  - Replaceable?: You can roll a basic ELK or Loki/Grafana stack yourself; but a managed service saves time early.
+
+- Tracing / OTEL backend
+  - Examples: Tempo (Grafana stack), Honeycomb, Lightstep, Jaeger.
+  - Function: Collect OpenTelemetry traces from Middleman and related services for debugging and cost/latency insights. [blog.cloudflare](https://blog.cloudflare.com/api-gateway/)
+  - Replaceable?: You can self‑host Jaeger/Tempo; this is one area where building your own *collector* could be done, but using existing open‑source OTEL backends is smarter than starting from scratch.
+
+- Uptime/health monitoring
+  - Examples: Better Uptime, Healthchecks.io, Pingdom.
+  - Function: External pings to /internal/ping, /v1/agent/ping; alert on downtime.
+  - Replaceable?: You can script your own monitors and send alerts via webhooks, but a SaaS monitor is faster early.
+
+***
+
+## Dev, Code, CI/CD
+
+- Code hosting
+  - Example: GitHub (you’re already on it).
+  - Function: Repo hosting, PRs, issues, releases.
+  - Replaceable?: Self‑host Git (Gitea, GitLab) is possible but not worth the overhead right now.
+
+- CI/CD pipeline
+  - Examples: GitHub Actions, GitLab CI, CircleCI.
+  - Function: Test, build Docker images, deploy to cloud/Workers.
+  - Replaceable?: You *could* build your own deploy tooling in StreetCode or a custom orchestrator, but CI SaaS is very cheap and aligns with standard workflows.
+
+- Secrets management
+  - Examples: Doppler, 1Password for Business, AWS Secrets Manager.
+  - Function: Store API keys, DB strings, Stripe secrets, provider keys.
+  - Replaceable?: You can store secrets in `.env` and keep them out of git, but a secrets manager is safer; building your own secure vault is non‑trivial.
+
+***
+
+## Product & Front‑Of‑House
+
+- Marketing site / CMS
+  - Examples: Next.js + Vercel, Webflow, or a static site via Cloudflare Pages.
+  - Function: Tap919 marketing page, pricing, docs, affiliate pitch, content flywheel hub.
+  - Replaceable?: You *are* going to build some of this (it fits your “edge storefront” story), but leveraging a framework like Next.js is a good baseline.
+
+- Documentation platform
+  - Examples: GitBook, ReadMe, Docusaurus.
+  - Function: API docs, agent capability docs, Runner guides.
+  - Replaceable?: You can build your own docs system inside StreetCode/AetherDesk, but early adoption and SEO are easier with something like Docusaurus or GitBook.
+
+- Support & ticketing
+  - Examples: Zendesk, Help Scout, Intercom.
+  - Function: Inbox, support tickets, help center, chat widget.
+  - Replaceable?: You can roll your own minimal “AetherDesk support” module later; in the first 120 days, using email + a lightweight tool is fine.
+
+***
+
+## Comms & Collaboration
+
+- Internal chat
+  - Example: Slack, Discord.
+  - Function: Internal comms, incident channels, dev chat.
+  - Replaceable?: You could embed chat inside AetherDesk, but external Slack/Discord is standard and fast.
+
+- Project/issue tracking
+  - Examples: Linear, Jira, GitHub Projects.
+  - Function: Track 120‑day roadmap, war plan execution, bug tracking.
+  - Replaceable?: You can embed “Nexus board” functionality in AetherDesk or StreetCode; for the sprint, GitHub Issues/Projects is enough.
+
+***
+
+## AI & Model Providers
+
+- LLM providers
+  - Examples: OpenAI, Anthropic, Mistral, Google, etc.
+  - Function: Base models behind some `tap919:` lanes.
+  - Replaceable?: Long‑term you can run open‑source models via your own infra; short‑term you don’t want to self‑host everything.
+
+- Vector / search infra (optional)
+  - Examples: pgvector, Qdrant, Weaviate.
+  - Function: RAG/sampling layer for docs, usage history, agent knowledge.
+  - Replaceable?: You can build simple RAG via Postgres + pgvector; no need to rely on a third‑party SaaS vector DB unless you want managed scaling.
+
+***
+
+## Affiliate & Runner System
+
+- Affiliate management / payouts (optional external)
+  - Examples: Rewardful, Tolt. [rewardful](https://www.rewardful.com)
+  - Function: Track referrals, calculate commissions, manage payouts for SaaS affiliates.
+  - Replaceable?: This is exactly what you’re partially building:
+    - Affiliate table.
+    - Runner dashboards.
+    - Commission calculations.
+    - Payout previews.
+    - You can replace a Rewardful/Tolt‑style stack with your own capabilities plus Stripe/PayPal payouts.
+
+- Payout rails
+  - Examples: Stripe Connect, PayPal Payouts, Wise Business.
+  - Function: Actually send money to Runners.
+  - Replaceable?: You don’t want to build your own bank/payout system; you just orchestrate on top.
+
+***
+
+## Analytics & Growth
+
+- Product analytics
+  - Examples: PostHog, Amplitude, Mixpanel.
+  - Function: Understand user behavior in StreetCode/AetherDesk, funnel drop‑off, feature usage.
+  - Replaceable?: You can instrument much of this yourself with events stored in your DB and visualized in your own dashboards; a SaaS tool is faster, your own is more on‑brand long‑term.
+
+- Web analytics
+  - Examples: Plausible, Google Analytics.
+  - Function: Marketing site performance, conversion tracking to signup.
+  - Replaceable?: You can log basic web analytics to your own DB or server logs; using a simple privacy‑friendly analytics tool is fine initially.
+
+- Email/marketing automation
+  - Examples: ConvertKit, MailerLite, Customer.io.
+  - Function: Drip sequences for Runners, agency leads, free→paid conversion.
+  - Replaceable?: AetherDesk could eventually become your engagement engine; early on, a lightweight email platform is better than nothing.
+
+***
+
+## Legal, Compliance & Admin (Minimal)
+
+- E‑signature & contract management
+  - Examples: DocuSign, HelloSign.
+  - Function: Agency agreements, enterprise deals, affiliate terms.
+  - Replaceable?: You can do basic click‑wrap in your app, but e‑signature tools are standard for larger deals.
+
+- Policy templates / compliance
+  - Tools: Templates from legal SaaS or internal documents.
+  - Function: Terms of service, privacy policy, DPA, affiliate agreement.
+  - Replaceable?: Should be authored by real counsel; not a place to build tooling from scratch in 120 days.
+
+***
+
+## Where To Build Your Own vs Use Third‑Party
+
+**High‑leverage to build yourself (aligns with your moats):**
+
+- Tap919 Middleman (FastAPI + metrics + usage events).
+- Cloudflare Worker gateway + “Edge storefront” behavior.
+- Capability Registry and agentic interfaces (`tm.*`, `sc.*`, `bm.*`).
+- AetherDesk as the operator + Runner dashboard (usage, payouts, policy).
+- Affiliate Runner system (tracking, commissions, kits) on top of Middleman.
+- StreetCode (IDE) and BlackMind (model/CRISPR surface).
+
+**Low‑leverage to build yourself (use third‑party):**
+
+- Card payments, invoices, tax (Stripe).
+- Core DB and data infra (managed Postgres, basic storage).
+- Deep observability stack (start with hosted or OSS; don’t invent OTEL).
+- Full accounting system and legal stack.
+- Commodity dev tooling (Git hosting, CI/CD, chat, project tracking).
+
+If you want, I can turn this into a **prioritized checklist**: “Tools to set up in the next 7 days vs what can wait,” specifically tuned to hitting your 120‑day goals.  
