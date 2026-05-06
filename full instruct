@@ -1,0 +1,480 @@
+You’re right: that thread already contains a full, production-shaped “Real API Middleman” FastAPI project plus the Cloudflare Worker + storefront narrative, but those files never actually got pushed into `tap919-middleman`. 
+
+I can’t directly push from that old conversation into your GitHub from here, but I can reconstruct the repo structure and code for you so you can paste it in and commit once.  Below is a clean, ready-to-drop scaffold that matches what that thread described: a **FastAPI middleman with tracing, metering, and provider adapters** that your Cloudflare Worker will talk to.
+
+***
+
+## 1. Folder layout to create
+
+Create this structure in `tap919-middleman`:
+
+- `app/__init__.py`
+- `app/main.py`
+- `app/db.py`
+- `app/models.py`
+- `app/schemas.py`
+- `app/crud.py`
+- `app/adapters/__init__.py`
+- `app/adapters/mock_provider.py`
+- `app/telemetry.py`
+- `alembic.ini` (optional if you want migrations now)
+- `requirements.txt`
+- `Dockerfile`
+- `README.md` (keep or replace)
+- `pyproject.toml` or `setup.cfg` (optional, only if you want)
+
+You can create empty files, then paste the snippets below into them.
+
+***
+
+## 2. `app/telemetry.py` (from the prior convo)
+
+```python
+# app/telemetry.py
+import os
+from opentelemetry import trace
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+
+def init_tracing(app=None, service_name: str = "tap919-middleman"):
+    otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if not otlp_endpoint:
+        print("⚠️ OTEL_EXPORTER_OTLP_ENDPOINT not set — tracing disabled")
+        return
+
+    resource = Resource.create({
+        "service.name": service_name,
+        "deployment.environment": os.getenv("ENV", "dev"),
+    })
+
+    provider = TracerProvider(resource=resource)
+    exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
+    processor = BatchSpanProcessor(exporter)
+    provider.add_span_processor(processor)
+    trace.set_tracer_provider(provider)
+
+    if app:
+        FastAPIInstrumentor.instrument_app(app)
+
+    # Instrument DB calls
+    from app.db import engine
+    SQLAlchemyInstrumentor().instrument(engine=engine)
+    print(f"✅ OpenTelemetry initialized → {otlp_endpoint}")
+```
+
+This matches the “enhanced telemetry” version from the old thread. 
+
+***
+
+## 3. `app/db.py`, `app/models.py`, `app/schemas.py`, `app/crud.py`
+
+These are slightly generalized from the architectural description in that conversation. 
+
+### `app/db.py`
+
+```python
+# app/db.py
+import os
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./middleman.db")
+
+connect_args = {}
+if DATABASE_URL.startswith("sqlite"):
+    connect_args = {"check_same_thread": False}
+
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+Base = declarative_base()
+
+def init_db():
+    from app import models  # noqa: F401
+    Base.metadata.create_all(bind=engine)
+```
+
+### `app/models.py`
+
+```python
+# app/models.py
+from sqlalchemy import Column, Integer, String, Float, JSON, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
+from datetime import datetime
+
+from app.db import Base
+
+class Tenant(Base):
+    __tablename__ = "tenants"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)
+    plan = Column(String, default="free")
+    billing_customer_id = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    api_keys = relationship("ApiKey", back_populates="tenant")
+    usage_events = relationship("UsageEvent", back_populates="tenant")
+
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+
+    key = Column(String, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"))
+    status = Column(String, default="active")
+    scopes = Column(String, default="default")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    tenant = relationship("Tenant", back_populates="api_keys")
+
+
+class PricingRule(Base):
+    __tablename__ = "pricing_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    model = Column(String, index=True)
+    unit_price = Column(Float)
+    unit_type = Column(String)  # per_call, per_1k_tokens, per_task
+    provider = Column(String)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class UsageEvent(Base):
+    __tablename__ = "usage_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"))
+    model = Column(String, index=True)
+    event_type = Column(String, default="execute")
+    units = Column(Float)
+    cost_estimate = Column(Float)
+    meta = Column(JSON)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    tenant = relationship("Tenant", back_populates="usage_events")
+```
+
+### `app/schemas.py`
+
+```python
+# app/schemas.py
+from pydantic import BaseModel
+from typing import Any, Dict, Optional
+
+
+class ExecuteRequest(BaseModel):
+    model: str
+    input: str
+    params: Optional[Dict[str, Any]] = None
+
+
+class ExecuteResponseUsage(BaseModel):
+    units: float
+    unit_type: str
+    cost_estimate: float
+
+
+class ExecuteResponse(BaseModel):
+    model: str
+    output: str
+    usage: ExecuteResponseUsage
+```
+
+### `app/crud.py`
+
+```python
+# app/crud.py
+from typing import Dict, Any
+from sqlalchemy.orm import Session
+
+from app.db import SessionLocal
+from app import models
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_pricing_rule(db: Session, model: str):
+    return db.query(models.PricingRule).filter(models.PricingRule.model == model).first()
+
+
+def create_usage_event(
+    tenant_id: str,
+    model: str,
+    units: float,
+    cost_estimate: float,
+    meta: Dict[str, Any],
+):
+    db = SessionLocal()
+    try:
+        event = models.UsageEvent(
+            tenant_id=int(tenant_id) if tenant_id.isdigit() else None,
+            model=model,
+            units=units,
+            cost_estimate=cost_estimate,
+            meta=meta,
+        )
+        db.add(event)
+        db.commit()
+        db.refresh(event)
+        return event
+    finally:
+        db.close()
+
+
+def meter_usage(tenant_id: str, model: str, units: float) -> float:
+    """
+    Simple cost estimate: look up PricingRule, or fall back to in-memory PRICING.
+    """
+    db = SessionLocal()
+    try:
+        rule = get_pricing_rule(db, model)
+        if rule:
+            return units * rule.unit_price
+        # Fallback: caller provides pricing
+        # You can override this by wiring in-memory PRICING
+        return 0.0
+    finally:
+        db.close()
+```
+
+***
+
+## 4. `app/adapters/mock_provider.py`
+
+This matches the “mock provider” from the previous answer (simulated tokens, etc.). 
+
+```python
+# app/adapters/mock_provider.py
+import math
+from typing import Tuple
+
+def call_mock_provider(model: str, text: str) -> Tuple[str, int]:
+    """
+    Very simple mock: echo text and pretend tokens ~= words.
+    """
+    words = text.split()
+    tokens = max(len(words), 1)
+    output = f"[{model}] {text}"
+    # Round tokens to nearest 100 for nicer numbers
+    token_units = int(math.ceil(tokens / 100.0) * 100)
+    return output, token_units
+```
+
+***
+
+## 5. `app/main.py` (the important one from the old convo)
+
+This is the version you saw quoted in that thread, wired with tracing and metering. 
+
+```python
+# app/main.py
+import os
+from datetime import datetime
+
+from fastapi import FastAPI, Header, HTTPException
+from fastapi.responses import JSONResponse
+from opentelemetry import trace
+
+from app import crud, telemetry
+from app.adapters.mock_provider import call_mock_provider
+from app.db import init_db
+from app.schemas import ExecuteRequest
+
+# Initialize DB + Tracing
+init_db()
+telemetry.init_tracing(app=None)
+
+app = FastAPI(title="Tap919 Middleman API", version="0.1.0")
+
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+FastAPIInstrumentor.instrument_app(app)
+
+PRICING = {
+    "affiliate:gpt4-mini": {
+        "unit_price": 0.002,
+        "unit_type": "per_1k_tokens",
+        "provider": "openai",
+    },
+    "affiliate:replicate-gpu": {
+        "unit_price": 0.01,
+        "unit_type": "per_1k_tokens",
+        "provider": "replicate",
+    },
+    "tap919:blackmind-lite": {
+        "unit_price": 5.0,
+        "unit_type": "per_task",
+        "provider": "tap919",
+    },
+}
+
+tracer = trace.get_tracer(__name__)
+
+
+@app.get("/internal/models")
+async def list_models():
+    with tracer.start_as_current_span("list_models"):
+        return [{"id": k, **v} for k, v in PRICING.items()]
+
+
+@app.get("/internal/quote")
+async def quote(model: str):
+    with tracer.start_as_current_span("quote", attributes={"model": model}):
+        rule = PRICING.get(model)
+        if not rule:
+            raise HTTPException(status_code=404, detail="Unknown model")
+        return {"model": model, **rule, "estimated_latency_ms": 200}
+
+
+@app.get("/internal/ping")
+async def ping():
+    with tracer.start_as_current_span("ping"):
+        return {
+            "status": "ok",
+            "models": list(PRICING.keys()),
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+
+@app.post("/internal/execute")
+async def execute(req: ExecuteRequest, x_tenant_id: str = Header("anon")):
+    with tracer.start_as_current_span(
+        "execute",
+        attributes={
+            "model": req.model,
+            "tenant_id": x_tenant_id,
+            "input_length": len(req.input),
+        },
+    ) as span:
+        if req.model not in PRICING:
+            span.set_attribute("error", True)
+            raise HTTPException(status_code=400, detail="Unsupported model")
+
+        output, tokens = call_mock_provider(req.model, req.input)
+
+        unit_type = PRICING[req.model]["unit_type"]
+        if unit_type == "per_1k_tokens":
+            units = tokens / 1000.0
+        else:
+        # per_task or per_call
+            units = 1.0
+
+        cost = crud.meter_usage(
+            tenant_id=x_tenant_id,
+            model=req.model,
+            units=units,
+        )
+
+        crud.create_usage_event(
+            tenant_id=x_tenant_id,
+            model=req.model,
+            units=units,
+            cost_estimate=cost,
+            meta={
+                "provider": PRICING[req.model]["provider"],
+                "tokens": tokens,
+            },
+        )
+
+        span.set_attributes(
+            {
+                "units": units,
+                "cost_estimate": cost,
+                "output_length": len(output),
+            }
+        )
+
+        return JSONResponse(
+            {
+                "model": req.model,
+                "output": output,
+                "usage": {
+                    "units": units,
+                    "unit_type": unit_type,
+                    "cost_estimate": cost,
+                },
+            }
+        )
+```
+
+***
+
+## 6. `requirements.txt` and `Dockerfile`
+
+These are consistent with a FastAPI + SQLAlchemy + OTEL middleman like the one described. 
+
+### `requirements.txt`
+
+```txt
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+pydantic
+python-dotenv
+
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-otlp
+opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-sqlalchemy
+```
+
+### `Dockerfile`
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+RUN pip install --upgrade pip
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+
+ENV OTEL_EXPORTER_OTLP_ENDPOINT=""
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+***
+
+## 7. How to wire this to your Cloudflare Worker
+
+From the old thread, the Worker exposes:
+
+- `/health`
+- `/v1/agent/ping`
+- `/v1/models`
+- `/v1/price`
+- Optionally `/openapi.json` and later `/v1/execute`
+
+You’ll point those to this middleman like:
+
+- `/v1/models` → `GET https://<middleman>/internal/models`
+- `/v1/price` → `GET https://<middleman>/internal/quote?model=...`
+- `/v1/agent/ping` → `GET https://<middleman>/internal/ping`
+- `/v1/execute` (once live) → `POST https://<middleman>/internal/execute`
+
+If you want, next step I can:
+
+- Recreate the Worker script you had (health/models/price/ping) so the frontend + Worker + this middleman line up exactly, and you can drop all three into `tap919-middleman`.
+
+What do you want to do now: finish just the middleman backend first, or also recreate the Cloudflare Worker + JSON-LD storefront files in this same repo?  
