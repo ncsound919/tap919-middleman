@@ -1,0 +1,148 @@
+Right now the repo is perfect as a **strategic binder**, but it still doesn’t have the actual runnable Middleman service code wired in.  You’ve already dropped the strategy artifacts; now we need to layer the FastAPI app + capability registry on top of this structure.
+
+***
+
+## 1. What’s Already in `tap919-middleman`
+
+From the repo root I see these files: 
+
+- `120 days` – high‑level war plan.
+- `full instruct` – core instructions / system description.
+- `scaffold agent workdorce` – agent workforce scaffold.
+- `agent sigs` – capability signatures.
+- `affiliate` – affiliate system concept.
+- `affiliate pay` – affiliate payout system.
+- `rest` – presumably remaining notes / context.
+- `.gitignore`, `README.md`.
+
+This is exactly the right **executive + agentic spec**. What’s missing are:
+
+- `app/` Python service code.
+- `requirements.txt`, `Dockerfile`, `.env` template.
+- A `capabilities.json` (or similar) that embeds those cap sigs in machine‑readable form.
+
+***
+
+## 2. How To Line The Code Up With These Files
+
+Here’s the concrete folder layout I suggest adding **on top** of what you have:
+
+- `app/`
+  - `__init__.py`
+  - `main.py`
+  - `db.py`
+  - `models.py`
+  - `schemas.py`
+  - `crud.py`
+  - `telemetry.py`
+  - `adapters/`
+    - `__init__.py`
+    - `mock_provider.py`
+- `capabilities/`
+  - `tap919-middleman.json` (machine version of `agent sigs`, `affiliate`, `affiliate pay`).
+- `scripts/`
+  - `seed_pricing.py`
+- `requirements.txt`
+- `Dockerfile`
+- `.env.example` (keep your real `.env` local, not committed)
+
+Everything we’ve already written maps directly into those files; you just need to create the directories and paste.
+
+***
+
+## 3. Mapping Your “Binder Files” To Implementation
+
+Use your existing repo files as **source of truth**:
+
+- `120 days`
+  - Keep as is; this is the 120‑day war plan.
+  - Also reference it in `README.md` (“See `120 days` for roadmap”).
+
+- `scaffold agent workdorce`
+  - This maps directly to the **agent role definitions** we outlined.
+  - Next step: move the JSON‑style cap sigs into:
+    - `capabilities/tap919-middleman.json`.
+
+- `agent sigs`
+  - Contents go into `capabilities/tap919-middleman.json`.
+  - That JSON is what agents (and StreetCode/BlackMind) load to know about:
+    - `tm.middleman.execute`
+    - `tm.middleman.quote`
+    - `tm.middleman.models`
+    - `tm.billing.*`
+    - `tm.routing.*`
+    - `tm.telemetry.*`
+    - `tm.affiliate.*`
+
+- `affiliate` / `affiliate pay`
+  - These inform the implementation of:
+    - `tm.affiliate.register_runner`
+    - `tm.affiliate.attach_to_tenant`
+    - `tm.affiliate.record_usage_share`
+    - `tm.affiliate.payout_preview`
+    - `tm.affiliate.generate_runner_kit`
+  - Phase 1: only wire the **data model links** (Tenant → Affiliate) and the ability to compute commission; payouts can be manual at first.
+
+Nothing needs to be deleted; we’re just stacking a production‑ready service under the same repo.
+
+***
+
+## 4. Minimal Steps For You Right Now
+
+If you want this lined up quickly without rewriting anything:
+
+1) In `tap919-middleman` root, create:
+
+- Folder `app` and subfolder `app/adapters`.
+- Folder `capabilities`.
+- Folder `scripts`.
+
+2) Add the core service files:
+
+- Paste in:
+  - `app/main.py`, `app/db.py`, `app/models.py`, `app/schemas.py`, `app/crud.py`, `app/telemetry.py`, `app/adapters/mock_provider.py`, `requirements.txt`, `Dockerfile`, `.env.example`, `scripts/seed_pricing.py` exactly as in my earlier messages.
+- Commit them alongside your strategy files.
+
+3) Create `capabilities/tap919-middleman.json`:
+
+- Take the JSON cap sigs we just defined (`tm.middleman.*`, `tm.billing.*`, `tm.routing.*`, `tm.telemetry.*`, `tm.affiliate.*`) and drop them into a **single JSON array** like:
+
+```json
+[
+  { "name": "tm.middleman.execute", ... },
+  { "name": "tm.middleman.quote", ... },
+  { "name": "tm.middleman.models", ... },
+  { "name": "tm.billing.record_usage", ... },
+  { "name": "tm.billing.invoice_preview", ... },
+  { "name": "tm.pricing.define_lane", ... },
+  { "name": "tm.routing.score_providers", ... },
+  { "name": "tm.telemetry.analyze_window", ... },
+  { "name": "tm.affiliate.register_runner", ... },
+  { "name": "tm.affiliate.attach_to_tenant", ... },
+  { "name": "tm.affiliate.record_usage_share", ... },
+  { "name": "tm.affiliate.payout_preview", ... },
+  { "name": "tm.affiliate.generate_runner_kit", ... }
+]
+```
+
+4) Update `README.md` to point at your strategy files:
+
+- Add sections:
+  - “Architecture overview” → reference `full instruct`.
+  - “120‑day war plan” → reference `120 days`.
+  - “Agentic workforce” → reference `scaffold agent workdorce`.
+  - “Capabilities registry” → reference `capabilities/tap919-middleman.json`.
+  - “Affiliate runner system” → reference `affiliate`, `affiliate pay`.
+
+After that, it will be crystal clear to anyone (or any agent) how the **business logic, agent plans, and actual running code** line up in one repo.
+
+***
+
+## 5. How I Can Help Next
+
+If you want, I can:
+
+- Give you a **ready‑to‑paste `capabilities/tap919-middleman.json`** built from the cap sigs we defined.
+- Draft a new `README.md` section that ties each of your existing text files to specific endpoints and capabilities (so anyone landing on the repo sees the full picture).
+
+Do you want me to generate the full `capabilities/tap919-middleman.json` file now so you can just paste it into the repo?  
