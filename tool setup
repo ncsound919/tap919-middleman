@@ -1,0 +1,217 @@
+To hit the 120‑day sprint, treat the next 7 days as “infra week” and only set up what unblocks real money: **running Middleman, charging for usage, watching it, and talking to customers**.
+
+***
+
+## Day 1–2: Run Middleman For Real
+
+- Cloud account (compute)
+  - Set up: AWS / GCP / Azure / Fly.io (pick one).
+  - Purpose: Run the FastAPI Middleman and any background workers.
+  - Why now: No live service = no usage, no data, no deals.
+  - Build vs buy: Use managed cloud; don’t roll your own hardware.
+
+- Containerization & deployment
+  - Set up: Docker + either:
+    - Docker Compose on a single VM, or
+    - A simple managed container service (ECS/Fargate, Cloud Run, Fly.io apps).
+  - Purpose: Build `tap919-middleman` image and deploy `app/main.py` behind a stable URL.
+  - Build vs buy: Use Docker and basic managed deploys; don’t hand‑craft VM scripts.
+
+- Database (start with managed Postgres)
+  - Set up: Supabase, Neon, RDS, or equivalent Postgres.
+  - Purpose: Store Tenants, ApiKeys, PricingRules, UsageEvents, Affiliates.
+  - Why now: Without a proper DB, you can’t meter, quote, or analyze.
+  - Build vs buy: Use managed Postgres; you can still prototype on SQLite for local dev.
+
+- Secrets management (minimal)
+  - Set up: At least `.env` files per environment + cloud secret storage (AWS SSM / Secret Manager, or Doppler if you want).
+  - Purpose: Secure DB URL, Stripe keys, provider keys.
+  - Build vs buy: Do not build your own vault; just use env variables plus cloud secrets.
+
+***
+
+## Day 2–3: Edge Gateway, Health, And Observability
+
+- Cloudflare account + Workers
+  - Set up:
+    - Domain or subdomain on Cloudflare.
+    - One Worker fronting Middleman with:
+      - `/v1/models`
+      - `/v1/price`
+      - `/v1/execute`
+      - `/v1/agent/ping`
+  - Purpose: Low‑latency edge API, per‑tenant key headers, affiliate link capture, and routing.
+  - Build vs buy: Use Cloudflare Workers; you’re already designing around this.
+
+- Basic monitoring (external)
+  - Set up: A simple uptime monitor (Better Uptime, Healthchecks.io, or similar).
+  - Purpose:
+    - Ping `/internal/ping` on Middleman.
+    - Ping Worker `/v1/agent/ping`.
+    - Alert via email/Slack on failures.
+  - Build vs buy: You can script it later; use a SaaS monitor now.
+
+- Logging / tracing backend (minimal)
+  - Set up:
+    - Either:
+      - Grafana Cloud (Loki + Tempo), or
+      - A small self‑hosted Grafana + Tempo/Jaeger stack.
+  - Purpose: Receive OpenTelemetry traces from Middleman so you can:
+    - See per‑call latency, errors, and cost attribution.
+  - Build vs buy: Use existing OTEL stack; don’t invent your own tracing format.
+
+***
+
+## Day 3–4: Billing & Money Flow
+
+- Stripe account & products
+  - Set up:
+    - Stripe account.
+    - At least 2–3 products/prices:
+      - A “Tap919 Credits” product for base usage (tokens/requests).
+      - A “Tap919 Pro Lane” or “BlackMind Lite” for higher tiers.
+  - Purpose: Charge customers for usage and plans.
+  - Build vs buy: Use Stripe; building your own card/billing processor is a non‑starter.
+
+- Stripe Billing usage integration (Phase 1)
+  - Wire:
+    - From `UsageEvent` → Stripe usage records via a background job or agent.
+    - At first, even a cron/scheduler that batches daily is fine.
+  - Purpose: Convert your usage logs into real bills.
+  - Build vs buy: You supply the usage data; Stripe handles invoicing and taxes.
+
+- Basic accounting connection
+  - Set up:
+    - QuickBooks / Xero at minimum, or at least Stripe → CSV export workflow.
+  - Purpose: Keep books clean from day 1 (even if light).
+  - Build vs buy: Don’t build an accounting system; just configure exports.
+
+***
+
+## Day 4–5: Front Door, Docs, And Sales Surface
+
+- Marketing / product site
+  - Set up:
+    - A simple Next.js or static site (Vercel, Cloudflare Pages, or Netlify).
+  - Purpose:
+    - Explain “Tap919 Agent Gateway.”
+    - Highlight usage‑based pricing and “future monopoly prevention.”
+    - Provide CTAs for “Get API key” and “Talk to us.”
+  - Build vs buy: You’ll build this site; just use a framework and a host, not a homegrown server.
+
+- Documentation hub
+  - Set up:
+    - GitHub Pages or Docusaurus/GitBook for:
+      - API docs (`/v1/*`).
+      - Onboarding guides.
+      - Runner/affiliate explainer.
+  - Purpose: Let agencies and devs self‑serve and test the gateway.
+  - Build vs buy: You can roll your own docs later; start with Docusaurus or GitBook.
+
+- Support channel
+  - Set up:
+    - One central support email (support@) and either:
+      - A Slack community, or
+      - A simple support SaaS (Help Scout/Zendesk) if you prefer.
+  - Purpose: Capture early agency questions and issues in one place.
+  - Build vs buy: AetherDesk will eventually absorb this; for week 1, keep it simple.
+
+***
+
+## Day 5–6: Internal Ops & Dev Loop
+
+- Code + CI/CD
+  - Set up:
+    - GitHub repo (already done).
+    - GitHub Actions workflow:
+      - Run tests on push.
+      - Build Docker image.
+      - Deploy to your chosen cloud and optionally update Cloudflare Worker bindings.
+  - Purpose: Deploy quickly and safely, iterate daily.
+  - Build vs buy: CI from GitHub Actions; don’t build your own pipeline.
+
+- Internal chat & tracking
+  - Set up:
+    - Slack/Discord workspace.
+    - GitHub Issues/Projects for roadmap and bug tracking.
+  - Purpose:
+    - Track 120‑day sprint tasks.
+    - Coordinate content, product, and infra work.
+  - Build vs buy: Long term, you can mirror this in AetherDesk; now is not the time.
+
+- Product analytics (optional but powerful)
+  - Set up:
+    - PostHog or simple event logging in your own DB.
+  - Purpose:
+    - See which endpoints agents and customers hit.
+    - Measure free→paid conversions.
+  - Build vs buy: You can later build focused analytics into AetherDesk; use an existing tool or lightweight custom event logging now.
+
+***
+
+## Day 6–7: Runner Affiliate Basics & First Customers
+
+- Runner (affiliate) tracking v1
+  - Set up (inside your own stack):
+    - `Affiliate` table in Postgres.
+    - `affiliate_id` and `affiliate_code` fields.
+    - `Tenant.affiliate_id` relationship.
+    - Add `?aff=CODE` handling in Cloudflare Worker to attach new tenants to affiliates.
+  - Purpose: Make the “instant employee” loop real at a basic level.
+  - Build vs buy: This is core IP; build it yourself on Middleman + DB.
+
+- Payout path v1
+  - Set up:
+    - Decide payout rail: Stripe Connect or PayPal Payouts.
+    - Do **manual payouts** for early Runners:
+      - Use a query on AffiliatePayout or aggregated UsageEvents to compute owed commissions.
+  - Purpose: Show that Runners can really earn and get paid.
+  - Build vs buy: You orchestrate the logic & UI; payouts themselves go through Stripe/PayPal.
+
+- First‑agency‑ready flow
+  - Ensure:
+    - You can:
+      - Create a tenant.
+      - Issue an API key.
+      - Route their calls via Worker → Middleman.
+      - See UsageEvents.
+      - Generate a simple invoice preview.
+    - You can:
+      - Attribute usage to an affiliate (Runner) if they came via `?aff=CODE`.
+  - Purpose: Be ready to onboard your first paying agency and your first Runner in week 2.
+
+***
+
+### If You Want A One‑Look Checklist
+
+- Day 1–2:
+  - [ ] Cloud account + Docker deploy of Middleman.
+  - [ ] Managed Postgres for prod.
+  - [ ] Secrets (.env + cloud secret manager).
+
+- Day 2–3:
+  - [ ] Cloudflare Worker fronting Middleman.
+  - [ ] Uptime monitor.
+  - [ ] Basic OTEL backend wired.
+
+- Day 3–4:
+  - [ ] Stripe account + core products/prices.
+  - [ ] Basic usage→Stripe integration.
+  - [ ] Accounting baseline (QuickBooks/Xero or Stripe exports).
+
+- Day 4–5:
+  - [ ] Simple marketing site with pricing and APIs.
+  - [ ] Docs site (API + getting started).
+  - [ ] Support channel (email + Slack/Discord).
+
+- Day 5–6:
+  - [ ] GitHub Actions CI/CD.
+  - [ ] Internal chat & issues.
+  - [ ] (Optional) Product analytics.
+
+- Day 6–7:
+  - [ ] Affiliate schema + `?aff=CODE` flow.
+  - [ ] Manual payout workflow (Stripe/PayPal).
+  - [ ] End‑to‑end agency onboarding path tested.
+
+If you tell me which cloud (AWS / GCP / Fly / other) and which DB provider you’re leaning towards, I can sketch the exact architecture diagram and environment variables you should set for each of these in one shot.  
