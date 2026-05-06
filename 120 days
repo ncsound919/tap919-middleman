@@ -1,0 +1,255 @@
+Tap919 Middleman is the **cash register and kill‑switch** for the whole 120‑day play: it’s how we meter agents, sell credits, and make incumbents nervous about their pricing power. [apiable](https://www.apiable.io/platform/api-monetization/)
+
+Below is how it fits into a billion‑in‑120‑days roadmap, lane by lane.
+
+***
+
+## 1. Where Middleman Sits In The 3‑Company Stack
+
+Think in terms of layers:
+
+- StreetCode (TapIDE)
+  - Where devs and founders “make tracks” (agents, workflows, tools).
+  - Every run, test, deploy hits APIs for models, tools, and infra.
+- BlackMind
+  - Heavy models, CRISPR‑style agent editing, deep inference spend.
+  - Most expensive calls, highest margin, needs **strict metering**.
+- AetherDesk
+  - Operator console and client‑facing “session view”.
+  - Where customers see usage, invoices, limits, and observability.
+
+**Tap919 Middleman** is the *shared protocol cash layer*:
+
+- All agent/tool calls route through it (from StreetCode runtimes, BlackMind backends, AetherDesk automations).
+- It:
+  - Normalizes provider calls.
+  - Mints usage events.
+  - Calculates cost/credits.
+  - Emits telemetry.
+
+This is directly aligned with how modern API monetization platforms operate (meter events, feed billing, expose self‑service plans). [moesif](https://www.moesif.com/blog/technical/stripe/aws-api-gateway/End-To-End-API-Monetization-With-AWS-API-Gateway-Stripe-And-Moesif/)
+
+***
+
+## 2. Strategic Job: “Future Monopoly Prevention” Rail
+
+What makes this dangerous to GitHub/NVIDIA/Shopify:
+
+- You sit **between**:
+  - OpenAI, Anthropic, Replicate, NVIDIA NIM, etc.
+  - End customers and indie builders.
+- You:
+  - Turn any provider into a “line item” in a Tap919 bill.
+  - Make it trivial to switch underlying providers without touching app code.
+
+Industry is moving toward:
+- Usage‑based billing.
+- Token‑based pricing.
+- Multi‑provider, multi‑model stacks. [digitalapi](https://www.digitalapi.ai/blogs/best-api-monetization-platform-for-usage-based-billing)
+
+Tap919 Middleman becomes:
+
+- The **anti‑lock‑in rail**: customers never integrate directly with OpenAI/NVIDIA billing; they integrate with you.
+- The **portfolio manager**: you automatically shift traffic to cheaper/better providers; incumbents see unpredictable churn.
+
+This supports the “future monopoly prevention” story:
+- Customers aren’t buying one SaaS.
+- They’re buying *permanent optionality* across closed ecosystems.
+
+***
+
+## 3. 120‑Day Roadmap: What Middleman Must Ship
+
+### Phase 1 (Days 0–30): Minimum Disruptive Product
+
+Goal: **Production‑grade metered API core**, not a toy.
+
+Middleman deliverables:
+
+- Stable internal API:
+  - `/internal/models` – catalog with pricing meta.
+  - `/internal/quote` – cost preview per model.
+  - `/internal/execute` – execute, meter, and emit usage event.
+- DB + telemetry:
+  - SQLite for now, ready to swap to Postgres.
+  - `UsageEvent` logging for every call.
+  - OTEL spans for every execute / quote. [stripe](https://stripe.com/resources/more/usage-metering)
+- Cloudflare Worker front:
+  - Public `/v1/models`, `/v1/price`, `/v1/execute`, `/v1/agent/ping`.
+  - Normalized JSON schema for agents (StreetCode/BlackMind).
+  - Basic auth / key header normalization.
+- Billing concept:
+  - “Credits” or “units” per call / per tokens.
+  - Map PRICING table directly to Stripe meterable products later. [stripe](https://stripe.com/resources/more/usage-based-pricing-for-saas-how-to-make-the-most-of-this-pricing-model)
+
+StreetCode/BlackMind deliverables that depend on it:
+
+- StreetCode:
+  - Every code‑run feature calls out via Worker → Middleman.
+  - IDE shows “credit burn” per execution in the gutter.
+- BlackMind:
+  - When you spawn a CRISPR design or heavy inference, it goes through Middleman with a dedicated model ID (`tap919:blackmind-lite`, etc.).
+
+Outcome of Phase 1:
+
+- You can run demos where:
+  - A founder signs in.
+  - Builds an agent/flow.
+  - Runs it.
+  - Sees a **live usage strip** in AetherDesk preview (even if AetherDesk is just a panel over OTEL + DB at first).
+- You can sell “agent minutes” / “tokens” as **prepaid packs** without a full subscription stack. [apiable](https://www.apiable.io/platform/api-monetization/)
+
+***
+
+## 4. Phase 2 (Days 30–60): Turn It Into a Product
+
+Now we shift from “internal rail” to **sellable product** with its own P&L.
+
+Middleman upgrades:
+
+- Multi‑tenant and plan aware:
+  - Tenants + ApiKey + PricingRule fully wired.
+  - Price per tenant/plan: free tier, pro, enterprise.
+- Stripe usage‑based integration:
+  - Emit usage to Stripe Billing as meters:
+    - per API call.
+    - per token.
+    - per “CRISPR edit”. [moesif](https://www.moesif.com/blog/technical/stripe/aws-api-gateway/End-To-End-API-Monetization-With-AWS-API-Gateway-Stripe-And-Moesif/)
+  - Sync Stripe customer ↔ Tenant table.
+- Public “agent gateway” pricing page:
+  - Hosted either as:
+    - Its own Next.js micro‑frontend.
+    - Or as part of StreetCode marketing site.
+  - Shows:
+    - Per‑model pricing.
+    - “Bring your own key” vs “Tap919 subsidized keys”.
+- AetherDesk usage console (minimum):
+  - Tenant can:
+    - See usage by model, by time.
+    - Export CSV.
+    - See pending invoice estimate.
+
+What this unlocks:
+
+- You can sell Tap919 Middleman standalone to:
+  - Agencies building agents for clients.
+  - AI boutiques that need to meter internal tools.
+- You get **margin on arbitrage**:
+  - You buy OpenAI/NVIDIA wholesale.
+  - You resell at a blended price across their portfolio.
+
+This is exactly the pattern of API monetization platforms that claim “zero to live in weeks” – only here, it’s tuned for agents and tokens, not legacy APIs. [digitalapi](https://www.digitalapi.ai/blogs/best-api-monetization-platform-for-usage-based-billing)
+
+***
+
+## 5. Phase 3 (Days 60–90): Ecosystem & Lock‑In Through Optionality
+
+This is where it becomes an **acquisition trap**.
+
+Middleman capabilities:
+
+- Multi‑provider routing:
+  - Model IDs like `tap919:fast‑gpt4`, `tap919:cheap‑embed`.
+  - Internally:
+    - Route to OpenAI, Anthropic, local model, or NVIDIA NIM.
+    - Switch underlying providers without breaking contracts to your customers. [blog.cloudflare](https://blog.cloudflare.com/api-gateway/)
+- Policy engine:
+  - Rules per tenant:
+    - “Never send EU data to US providers.”
+    - “Use local models unless quality drops under X.”
+  - XAI hooks:
+    - Log “why was this model chosen?”
+- Local‑first mode:
+  - Some models run on local GPU (user, partner, or edge).
+  - Middleman still meters and logs usage, even if inference is on‑prem.
+
+StreetCode/BlackMind tie‑ins:
+
+- StreetCode:
+  - Agent templates reference `tap919:*` models, not specific vendors.
+  - Marketplace of “agent packs” is just **bundled model IDs** plus workflows.
+- BlackMind:
+  - Can auto‑optimize routing (sampling + reinforcement) through Middleman:
+    - Track success / failure / latency by provider.
+    - Move traffic to best performing ones.
+- AetherDesk:
+  - Operators can flip toggles:
+    - “Route 20% of traffic to experimental provider.”
+    - “Cap daily spend per tenant.”
+
+Now, if GitHub or NVIDIA wants to compete:
+
+- They must:
+  - Offer the same multi‑provider abstraction.
+  - Or acquire / partner with you to get it instantly.
+- Your leverage:
+  - You control:
+    - Customer integration.
+    - Billing.
+    - Observability.
+    - Policy.
+
+This is consistent with how API gateways + monetization platforms become sticky: they sit as the **billing + routing brain** in front of everything else. [aws.amazon](https://aws.amazon.com/blogs/awsmarketplace/api-monetization-with-stripe-amazon-api-gateway-and-moesif/)
+
+***
+
+## 6. Phase 4 (Days 90–120): Make It Scary on a Spreadsheet
+
+Everything in the acquisition conversation is numbers:
+
+- **GMV / Volume**:
+  - Total AI spend flowing through Middleman.
+- **Take rate**:
+  - Your margin between provider cost and what you charge.
+- **Retention / Embeddedness**:
+  - Number of apps and agents built on Tap919 IDs.
+- **Strategic risk**:
+  - If a cloud or big SaaS buys you, they get:
+    - “AI traffic switchboard.”
+    - Direct line into agent usage across industries.
+  - If they ignore you:
+    - You become the neutral “Visa/Mastercard for AI calls.”
+
+Targets in 120 days:
+
+- You don’t need $1B revenue; you need a **credible ramp**:
+  - X MRR from agencies and boutiques using the gateway.
+  - Y large design partners embedding it in their internal tools.
+  - Z monthly AI spend routed through Tap919.
+
+You amplify with:
+
+- Content flywheel:
+  - Morning: technical breakdowns of:
+    - “How we arbitrage model providers.”
+    - “How our OTEL traces show cost per prompt.” [stripe](https://stripe.com/resources/more/usage-metering)
+  - Evening: narrative posts:
+    - “Future monopoly prevention and AI lock‑in.”
+    - “Why we meter agents like we meter electricity.”
+
+***
+
+## 7. Concrete Next Steps For The Middleman Specifically
+
+To keep it hyper‑practical:
+
+- This week:
+  - Confirm middleman API is running locally.
+  - Add Cloudflare Worker proxy with `/v1/*`.
+  - Add `UsageEvent` viewer (basic admin page or AetherDesk panel).
+- Next 2–3 weeks:
+  - Wire Stripe metered billing:
+    - 1 product per abstract model.
+    - 1 price per metric (calls, tokens, tasks). [stripe](https://stripe.com/resources/more/usage-based-pricing-for-saas-how-to-make-the-most-of-this-pricing-model)
+  - Ship a “Tap919 Agent Gateway” landing page that:
+    - Lets people sign up for an API key.
+    - Shows per‑model pricing.
+- 30–60 day horizon:
+  - Bring in 3–5 design partners:
+    - AI agencies.
+    - Shopify shop operators running agent assistants.
+  - Mandate: all their agent traffic goes through Tap919 Middleman.
+
+If you’re down, next step I’d propose is: we define **3 specific monetizable model IDs** and the **Stripe products/prices** that map to them, so we can wire billing logic directly into this FastAPI core.
+
+What vertical or customer segment do you want to target first with this gateway (agencies, solo dev tools, ecom brands, or something else)?  
