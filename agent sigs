@@ -1,0 +1,687 @@
+Here are clean capability signatures (cap sigs) for the first core agents and services, in a format we can plug straight into a Shared Protocol / Capability Registry.
+
+***
+
+## 1. Middleman Core Capabilities
+
+These wrap the FastAPI endpoints you already have or are about to expose.
+
+### `tm.middleman.execute`
+
+- Purpose: Run a model/agent through Middleman, meter it, and get cost + output.
+- Signature:
+
+```json
+{
+  "name": "tm.middleman.execute",
+  "version": "1.0.0",
+  "description": "Execute a Tap919 model via Middleman, with usage metering and cost estimation.",
+  "input_schema": {
+    "type": "object",
+    "required": ["tenant_id", "model_id", "input"],
+    "properties": {
+      "tenant_id": {
+        "type": "string",
+        "description": "Tenant or account identifier attached to this call."
+      },
+      "model_id": {
+        "type": "string",
+        "description": "Tap919 model identifier (e.g., 'affiliate:gpt4-mini', 'tap919:blackmind-lite')."
+      },
+      "input": {
+        "type": "string",
+        "description": "Prompt or instruction payload for the model."
+      },
+      "params": {
+        "type": "object",
+        "description": "Optional provider/model-specific parameters (temperature, max_tokens, etc.).",
+        "additionalProperties": true
+      },
+      "trace_meta": {
+        "type": "object",
+        "description": "Optional tracing or correlation metadata.",
+        "additionalProperties": true
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["model", "output", "usage"],
+    "properties": {
+      "model": {
+        "type": "string",
+        "description": "Resolved model identifier used for execution."
+      },
+      "output": {
+        "type": "string",
+        "description": "Raw output text returned from downstream provider or local model."
+      },
+      "usage": {
+        "type": "object",
+        "required": ["units", "unit_type", "cost_estimate"],
+        "properties": {
+          "units": {
+            "type": "number",
+            "description": "Quantity used (e.g., 1 task, 1.23 units of 1k tokens)."
+          },
+          "unit_type": {
+            "type": "string",
+            "enum": ["per_call", "per_task", "per_1k_tokens"],
+            "description": "Metric the pricing uses for this call."
+          },
+          "cost_estimate": {
+            "type": "number",
+            "description": "Estimated cost in billing currency for this single call."
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+***
+
+### `tm.middleman.quote`
+
+- Purpose: Ask “what will this cost?” before executing.
+- Signature:
+
+```json
+{
+  "name": "tm.middleman.quote",
+  "version": "1.0.0",
+  "description": "Get a cost quote and metadata for a given model before execution.",
+  "input_schema": {
+    "type": "object",
+    "required": ["model_id"],
+    "properties": {
+      "model_id": {
+        "type": "string",
+        "description": "Tap919 model identifier to quote."
+      },
+      "estimated_tokens": {
+        "type": "number",
+        "description": "Optional estimated token count to compute estimated cost for token-based models."
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["model", "unit_price", "unit_type"],
+    "properties": {
+      "model": {
+        "type": "string",
+        "description": "Model identifier quoted."
+      },
+      "unit_price": {
+        "type": "number",
+        "description": "Price per unit (per call, per task, per 1k tokens)."
+      },
+      "unit_type": {
+        "type": "string",
+        "enum": ["per_call", "per_task", "per_1k_tokens"],
+        "description": "Unit for billing."
+      },
+      "provider": {
+        "type": "string",
+        "description": "Underlying provider (openai, replicate, tap919, etc.)."
+      },
+      "estimated_cost": {
+        "type": "number",
+        "description": "Optional computed cost from estimated_tokens, if provided."
+      },
+      "estimated_latency_ms": {
+        "type": "number",
+        "description": "Estimated latency in milliseconds."
+      }
+    }
+  }
+}
+```
+
+***
+
+### `tm.middleman.models`
+
+- Purpose: Let agents discover what models they can call.
+- Signature:
+
+```json
+{
+  "name": "tm.middleman.models",
+  "version": "1.0.0",
+  "description": "List available Tap919 model IDs with pricing and provider metadata.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "tenant_id": {
+        "type": "string",
+        "description": "Optional tenant ID, to filter models by plan/entitlements."
+      }
+    }
+  },
+  "output_schema": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "required": ["id", "unit_price", "unit_type", "provider"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Tap919 model ID."
+        },
+        "unit_price": {
+          "type": "number",
+          "description": "Price per unit."
+        },
+        "unit_type": {
+          "type": "string",
+          "enum": ["per_call", "per_task", "per_1k_tokens"],
+          "description": "Unit type for billing."
+        },
+        "provider": {
+          "type": "string",
+          "description": "Underlying provider name."
+        },
+        "plan_min": {
+          "type": "string",
+          "description": "Minimum plan required to access (free, pro, enterprise)."
+        }
+      }
+    }
+  }
+}
+```
+
+***
+
+## 2. Monetization Lane Agents (Billing / Pricing)
+
+### `tm.billing.record_usage`
+
+- Purpose: Convert a Middleman usage event into a billing‑grade record (Stripe, internal ledger, etc.). This reflects how usage‑based billing systems record discrete consumption events. [stripe](https://stripe.com/resources/more/usage-based-pricing-for-saas-how-to-make-the-most-of-this-pricing-model)
+
+```json
+{
+  "name": "tm.billing.record_usage",
+  "version": "1.0.0",
+  "description": "Record a usage event for billing in Stripe or the internal ledger.",
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "tenant_id",
+      "model_id",
+      "units",
+      "unit_type",
+      "trace_id",
+      "occurred_at"
+    ],
+    "properties": {
+      "tenant_id": {
+        "type": "string",
+        "description": "Tenant linked to this usage."
+      },
+      "model_id": {
+        "type": "string",
+        "description": "Tap919 model ID that generated usage."
+      },
+      "units": {
+        "type": "number",
+        "description": "Quantity consumed (e.g., 1 task, 1.234 units of 1k tokens)."
+      },
+      "unit_type": {
+        "type": "string",
+        "enum": ["per_call", "per_task", "per_1k_tokens"],
+        "description": "Billing unit for this usage."
+      },
+      "trace_id": {
+        "type": "string",
+        "description": "Correlation/trace ID from Middleman telemetry."
+      },
+      "occurred_at": {
+        "type": "string",
+        "format": "date-time",
+        "description": "Timestamp of when the usage occurred (UTC)."
+      },
+      "cost_estimate": {
+        "type": "number",
+        "description": "Estimated cost at time of event (pre‑discounts)."
+      },
+      "metadata": {
+        "type": "object",
+        "description": "Any additional metadata (provider, tokens, lane).",
+        "additionalProperties": true
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["status"],
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": ["recorded", "skipped", "error"],
+        "description": "Result of the recording operation."
+      },
+      "external_usage_id": {
+        "type": "string",
+        "description": "External billing system usage ID (e.g., Stripe usage record ID)."
+      },
+      "error": {
+        "type": "string",
+        "description": "Error message if status is 'error'."
+      }
+    }
+  }
+}
+```
+
+***
+
+### `tm.billing.invoice_preview`
+
+- Purpose: Let agents (or AetherDesk) show “what you’ve spent so far and what the next invoice will look like.” [stripe](https://stripe.com/resources/more/usage-metering)
+
+```json
+{
+  "name": "tm.billing.invoice_preview",
+  "version": "1.0.0",
+  "description": "Generate a preview of charges for a tenant over a given time window.",
+  "input_schema": {
+    "type": "object",
+    "required": ["tenant_id", "window_start", "window_end"],
+    "properties": {
+      "tenant_id": {
+        "type": "string",
+        "description": "Tenant to generate preview for."
+      },
+      "window_start": {
+        "type": "string",
+        "format": "date-time",
+        "description": "Start timestamp of billing window (UTC)."
+      },
+      "window_end": {
+        "type": "string",
+        "format": "date-time",
+        "description": "End timestamp of billing window (UTC)."
+      },
+      "include_breakdown": {
+        "type": "boolean",
+        "description": "Whether to include breakdown by model and metric.",
+        "default": true
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["tenant_id", "total_estimate"],
+    "properties": {
+      "tenant_id": {
+        "type": "string"
+      },
+      "currency": {
+        "type": "string",
+        "description": "Billing currency (e.g., 'usd')."
+      },
+      "total_estimate": {
+        "type": "number",
+        "description": "Total estimated amount for the window."
+      },
+      "lines": {
+        "type": "array",
+        "description": "Optional breakdown of usage charges.",
+        "items": {
+          "type": "object",
+          "required": ["model_id", "units", "unit_type", "amount"],
+          "properties": {
+            "model_id": {
+              "type": "string"
+            },
+            "units": {
+              "type": "number"
+            },
+            "unit_type": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "number",
+              "description": "Amount attributable to this line."
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+***
+
+### `tm.pricing.define_lane`
+
+- Purpose: Lane Architect’s tool for defining new `tap919:` SKUs and lanes (pro, enterprise, etc.), consistent with usage‑based SaaS best practices. [ordwaylabs](https://ordwaylabs.com/resources/guides/usage-based-pricing-guide/)
+
+```json
+{
+  "name": "tm.pricing.define_lane",
+  "version": "1.0.0",
+  "description": "Create or update a Tap919 pricing lane and associated model SKU.",
+  "input_schema": {
+    "type": "object",
+    "required": ["model_id", "unit_price", "unit_type", "provider"],
+    "properties": {
+      "model_id": {
+        "type": "string",
+        "description": "New or existing Tap919 model ID (e.g., 'tap919:blackmind-lite')."
+      },
+      "unit_price": {
+        "type": "number",
+        "description": "Base price per unit."
+      },
+      "unit_type": {
+        "type": "string",
+        "enum": ["per_call", "per_task", "per_1k_tokens"],
+        "description": "Billing unit for the lane."
+      },
+      "provider": {
+        "type": "string",
+        "description": "Underlying provider or composition (openai, local, ensemble, etc.)."
+      },
+      "min_plan": {
+        "type": "string",
+        "description": "Minimum plan required to access this lane (free, pro, enterprise)."
+      },
+      "tags": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Optional tags (e.g., 'fast', 'cheap', 'xai', 'gpu')."
+      },
+      "notes": {
+        "type": "string",
+        "description": "Human-readable description of the lane."
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["model_id", "status"],
+    "properties": {
+      "model_id": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string",
+        "enum": ["created", "updated"],
+        "description": "Whether a new lane was created or an existing one updated."
+      }
+    }
+  }
+}
+```
+
+***
+
+## 3. Routing / Telemetry Capabilities
+
+### `tm.routing.score_providers`
+
+- Purpose: Let the Middleman Router agent decide how to route traffic across providers based on cost/latency/reliability. [blog.axway](https://blog.axway.com/learning-center/apis/enterprise-api-strategy/api-monetization-models)
+
+```json
+{
+  "name": "tm.routing.score_providers",
+  "version": "1.0.0",
+  "description": "Score and rank providers for a given model family based on cost, latency, and error rates.",
+  "input_schema": {
+    "type": "object",
+    "required": ["model_family", "candidates"],
+    "properties": {
+      "model_family": {
+        "type": "string",
+        "description": "Logical model family (e.g., 'gpt4-class', 'embed-basic')."
+      },
+      "candidates": {
+        "type": "array",
+        "description": "Provider candidates to score.",
+        "items": {
+          "type": "object",
+          "required": ["provider", "price", "latency_ms", "error_rate"],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "description": "Provider identifier (openai, anthropic, local-nvidia, etc.)."
+            },
+            "price": {
+              "type": "number",
+              "description": "Price per unit for this provider."
+            },
+            "latency_ms": {
+              "type": "number",
+              "description": "Recent p95 latency."
+            },
+            "error_rate": {
+              "type": "number",
+              "description": "Recent error rate (0-1)."
+            }
+          }
+        }
+      },
+      "tenant_constraints": {
+        "type": "object",
+        "description": "Optional tenant restrictions (regions, providers to avoid, budget caps).",
+        "additionalProperties": true
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["ranking"],
+    "properties": {
+      "ranking": {
+        "type": "array",
+        "description": "Providers ordered best to worst.",
+        "items": {
+          "type": "object",
+          "required": ["provider", "score"],
+          "properties": {
+            "provider": {
+              "type": "string"
+            },
+            "score": {
+              "type": "number",
+              "description": "Relative score (higher is better)."
+            },
+            "reason": {
+              "type": "string",
+              "description": "Human-readable explanation for XAI."
+            }
+          }
+        }
+      },
+      "recommended_provider": {
+        "type": "string",
+        "description": "Top choice provider."
+      }
+    }
+  }
+}
+```
+
+***
+
+### `tm.telemetry.analyze_window`
+
+- Purpose: Let the Telemetry Analyst agent scan traces/usage for anomalies and opportunities. [blog.cloudflare](https://blog.cloudflare.com/api-gateway/)
+
+```json
+{
+  "name": "tm.telemetry.analyze_window",
+  "version": "1.0.0",
+  "description": "Analyze a time window of usage and telemetry for anomalies and optimization opportunities.",
+  "input_schema": {
+    "type": "object",
+    "required": ["window_start", "window_end"],
+    "properties": {
+      "window_start": {
+        "type": "string",
+        "format": "date-time",
+        "description": "Analysis window start (UTC)."
+      },
+      "window_end": {
+        "type": "string",
+        "format": "date-time",
+        "description": "Analysis window end (UTC)."
+      },
+      "tenant_id": {
+        "type": "string",
+        "description": "Optional tenant filter."
+      },
+      "model_id": {
+        "type": "string",
+        "description": "Optional model filter."
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["findings"],
+    "properties": {
+      "findings": {
+        "type": "array",
+        "description": "List of anomalies, hotspots, or recommendations.",
+        "items": {
+          "type": "object",
+          "required": ["type", "severity", "message"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "Category (latency_spike, error_spike, cost_outlier, routing_issue)."
+            },
+            "severity": {
+              "type": "string",
+              "enum": ["info", "warning", "critical"]
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable description."
+            },
+            "suggested_action": {
+              "type": "string",
+              "description": "Suggested operator or agent action."
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+***
+
+## 4. Builder Lane (StreetCode / BlackMind) Capability Stubs
+
+These make the IDE and brain editing agentic.
+
+### `sc.agent.create_blueprint`
+
+```json
+{
+  "name": "sc.agent.create_blueprint",
+  "version": "1.0.0",
+  "description": "Create a new agent blueprint that uses Tap919 models via Middleman.",
+  "input_schema": {
+    "type": "object",
+    "required": ["name", "goal", "steps"],
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "Agent display name."
+      },
+      "goal": {
+        "type": "string",
+        "description": "High-level goal or job of this agent."
+      },
+      "steps": {
+        "type": "array",
+        "description": "High-level steps in plain language.",
+        "items": { "type": "string" }
+      },
+      "model_preferences": {
+        "type": "array",
+        "description": "Preferred Tap919 model IDs or traits.",
+        "items": { "type": "string" }
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["agent_id"],
+    "properties": {
+      "agent_id": {
+        "type": "string",
+        "description": "Internal ID of the created agent blueprint."
+      }
+    }
+  }
+}
+```
+
+***
+
+### `bm.crispr.propose_patch`
+
+```json
+{
+  "name": "bm.crispr.propose_patch",
+  "version": "1.0.0",
+  "description": "Propose a CRISPR-style patch to an existing agent or model based on logs and failures.",
+  "input_schema": {
+    "type": "object",
+    "required": ["agent_id", "issue_description"],
+    "properties": {
+      "agent_id": {
+        "type": "string",
+        "description": "ID of the agent to patch."
+      },
+      "issue_description": {
+        "type": "string",
+        "description": "Summary of the observed problem or failure."
+      },
+      "examples": {
+        "type": "array",
+        "description": "Example inputs/outputs that demonstrate the issue.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "input": { "type": "string" },
+            "output": { "type": "string" },
+            "expected": { "type": "string" }
+          }
+        }
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["patch_id", "summary"],
+    "properties": {
+      "patch_id": {
+        "type": "string",
+        "description": "ID of the proposed patch."
+      },
+      "summary": {
+        "type": "string",
+        "description": "Human-readable summary of the proposed change."
+      }
+    }
+  }
+}
+```
+
+***
+
+If you tell me which registry format you want to use (YAML manifest, JSON file, or code‑first decorators), I can collapse these into a single file you can drop into a `capabilities/` folder and load dynamically.  
+
+Do you want to implement these caps first as a **JSON registry file in the Middleman repo**, or as **TypeScript/TS decorators in a shared “Tap919 Protocol” package** that all three products import?  
