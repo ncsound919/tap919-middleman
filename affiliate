@@ -1,0 +1,369 @@
+Use Tap919 Middleman as the payroll engine: you’re not running a “promo affiliate program,” you’re turning people into metered **field reps** that your system can track and pay like on‑demand employees. [payproglobal](https://payproglobal.com/answers/what-is-saas-affiliate-program/)
+
+Below is a concrete, agent‑ready affiliate system you can bolt onto what we’ve already built.
+
+***
+
+## 1. Program Design: How “Instant Employees” Work
+
+- Role:
+  - Anyone at home becomes a “Tap919 Runner”:
+    - They share links, onboard accounts, or deploy pre‑built agents for businesses.
+    - Every dollar of AI usage those accounts generate routes through Tap919 Middleman.
+- Pay:
+  - Revenue share on usage:
+    - X–Y% of net revenue from the tenants they originate (recurring, not one‑time). [partnershipleaders](https://partnershipleaders.com/post/api-monetization-strategies-and-best-practices/)
+    - Optional bounties for first‑time activation (e.g., first $50 in spend).
+- Mechanics:
+  - Each Runner gets:
+    - Unique affiliate code and link.
+    - A catalog of “Ready‑To‑Run” Tap919 agent bundles (e.g., “Ecom Support Agent”, “Lead Qualifier”).
+    - A simple Runner dashboard (AetherDesk view) showing:
+      - Accounts they’ve originated.
+      - Usage and expected payout.
+- Why this hits:
+  - SaaS affiliate programs already win with recurring commission on subscriptions. [payproglobal](https://payproglobal.com/answers/what-is-saas-affiliate-program/)
+  - You upgrade that to **recurring commission on usage**, which maps perfectly to your billing core. [stripe](https://stripe.com/resources/more/usage-based-pricing-for-saas-how-to-make-the-most-of-this-pricing-model)
+
+***
+
+## 2. Affiliate Data Model & Events
+
+Layer this on top of Middleman and billing.
+
+### New tables / fields
+
+- `Affiliate`
+  - `id`
+  - `code` (string; used in links or signup flows)
+  - `status` (active, suspended)
+  - `payout_percent` (e.g., 0.2 for 20%)
+  - `payout_method` (PayPal, Stripe Connect, etc.)
+- `Tenant` (extend existing)
+  - Add `affiliate_id` (FK → Affiliate) and `affiliate_source` (utm‑like string).
+- `AffiliatePayout`
+  - `id`
+  - `affiliate_id`
+  - `tenant_id`
+  - `period_start`, `period_end`
+  - `usage_revenue` (gross for that tenant)
+  - `commission_amount`
+  - `status` (pending, paid)
+
+### Event flow
+
+1. Prospect clicks Runner’s link:
+   - URL carries `?aff=CODE`.
+2. Tenant signs up (StreetCode, AetherDesk, or via API):
+   - Backend resolves `Affiliate` via `CODE`.
+   - Tenant row gets `affiliate_id` set.
+3. Tenant uses agents:
+   - Middleman logs `UsageEvent` as normal.
+   - Billing agent (`tm.billing.record_usage`) attributes part of net revenue to the tenant’s `affiliate_id`.
+4. Payout cycle:
+   - A separate “Payout Agent” batches usage by affiliate and period, calculates commission, and triggers payout.
+
+This matches how affiliate tracking and recurring commission systems typically work, but extended to usage‑based SaaS. [dodopayments](https://dodopayments.com/blogs/best-billing-platform-usage-based-pricing)
+
+***
+
+## 3. Capability Signatures for the Affiliate System
+
+These make it agentic and pluggable into your protocol.
+
+### `tm.affiliate.register_runner`
+
+- Purpose: Turn an average person into a Runner in one call.
+
+```json
+{
+  "name": "tm.affiliate.register_runner",
+  "version": "1.0.0",
+  "description": "Register a new Tap919 Runner (affiliate) and issue an affiliate code.",
+  "input_schema": {
+    "type": "object",
+    "required": ["email"],
+    "properties": {
+      "email": {
+        "type": "string",
+        "format": "email",
+        "description": "Email address of the new Runner."
+      },
+      "name": {
+        "type": "string",
+        "description": "Optional name for personalization."
+      },
+      "payout_method": {
+        "type": "string",
+        "description": "Preferred payout method (paypal, stripe_connect, etc.)."
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["affiliate_id", "affiliate_code", "signup_url"],
+    "properties": {
+      "affiliate_id": {
+        "type": "string",
+        "description": "Internal ID of the affiliate Runner."
+      },
+      "affiliate_code": {
+        "type": "string",
+        "description": "Unique code to be used in links and referrals."
+      },
+      "signup_url": {
+        "type": "string",
+        "description": "Ready-to-share signup URL embedding the affiliate code."
+      }
+    }
+  }
+}
+```
+
+***
+
+### `tm.affiliate.attach_to_tenant`
+
+- Purpose: Tie a signed‑up tenant to a Runner.
+
+```json
+{
+  "name": "tm.affiliate.attach_to_tenant",
+  "version": "1.0.0",
+  "description": "Attach a tenant account to an affiliate based on affiliate code.",
+  "input_schema": {
+    "type": "object",
+    "required": ["tenant_id", "affiliate_code"],
+    "properties": {
+      "tenant_id": {
+        "type": "string",
+        "description": "Tenant being created or updated."
+      },
+      "affiliate_code": {
+        "type": "string",
+        "description": "Affiliate code captured from link or signup."
+      },
+      "source": {
+        "type": "string",
+        "description": "Optional source metadata (landing page, campaign ID)."
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["tenant_id", "affiliate_id"],
+    "properties": {
+      "tenant_id": {
+        "type": "string"
+      },
+      "affiliate_id": {
+        "type": "string"
+      }
+    }
+  }
+}
+```
+
+***
+
+### `tm.affiliate.record_usage_share`
+
+- Purpose: Take a billing usage event and compute the affiliate’s cut.
+
+```json
+{
+  "name": "tm.affiliate.record_usage_share",
+  "version": "1.0.0",
+  "description": "Record affiliate share for a tenant usage event.",
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "tenant_id",
+      "usage_revenue",
+      "billing_event_id",
+      "occurred_at"
+    ],
+    "properties": {
+      "tenant_id": {
+        "type": "string",
+        "description": "Tenant whose usage generated revenue."
+      },
+      "usage_revenue": {
+        "type": "number",
+        "description": "Net revenue from this usage event after provider costs."
+      },
+      "billing_event_id": {
+        "type": "string",
+        "description": "Billing event or invoice line ID."
+      },
+      "occurred_at": {
+        "type": "string",
+        "format": "date-time",
+        "description": "Timestamp of the underlying usage."
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["status"],
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": ["recorded", "no_affiliate", "error"],
+        "description": "Whether an affiliate share was recorded."
+      },
+      "affiliate_id": {
+        "type": "string",
+        "description": "Affiliate who received credit (if any)."
+      },
+      "commission_amount": {
+        "type": "number",
+        "description": "Commission amount assigned to the affiliate for this event."
+      },
+      "error": {
+        "type": "string",
+        "description": "Error message if status is 'error'."
+      }
+    }
+  }
+}
+```
+
+This implements a revenue‑sharing model on API usage that is consistent with usage‑based monetization and partner ecosystems. [nordicapis](https://nordicapis.com/9-types-of-api-monetization-models/)
+
+***
+
+### `tm.affiliate.payout_preview`
+
+- Purpose: Show Runners “how much I’ve earned this period.”
+
+```json
+{
+  "name": "tm.affiliate.payout_preview",
+  "version": "1.0.0",
+  "description": "Generate a preview of affiliate commission for a period.",
+  "input_schema": {
+    "type": "object",
+    "required": ["affiliate_id", "period_start", "period_end"],
+    "properties": {
+      "affiliate_id": {
+        "type": "string",
+        "description": "Affiliate Runner ID."
+      },
+      "period_start": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "period_end": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["affiliate_id", "total_commission"],
+    "properties": {
+      "affiliate_id": {
+        "type": "string"
+      },
+      "currency": {
+        "type": "string",
+        "description": "Payout currency."
+      },
+      "total_commission": {
+        "type": "number",
+        "description": "Total commission expected for the period."
+      },
+      "lines": {
+        "type": "array",
+        "description": "Optional breakdown by tenant.",
+        "items": {
+          "type": "object",
+          "required": ["tenant_id", "usage_revenue", "commission_amount"],
+          "properties": {
+            "tenant_id": { "type": "string" },
+            "usage_revenue": { "type": "number" },
+            "commission_amount": { "type": "number" }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+***
+
+### `tm.affiliate.generate_runner_kit`
+
+- Purpose: Automate the assets so a person is “instant employee” out the gate.
+
+```json
+{
+  "name": "tm.affiliate.generate_runner_kit",
+  "version": "1.0.0",
+  "description": "Generate a starter kit for an affiliate Runner (links, scripts, content).",
+  "input_schema": {
+    "type": "object",
+    "required": ["affiliate_id", "target_audience"],
+    "properties": {
+      "affiliate_id": {
+        "type": "string",
+        "description": "Runner who will use the kit."
+      },
+      "target_audience": {
+        "type": "string",
+        "description": "High-level audience (e.g., 'AI agencies', 'ecom brands')."
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["deck", "scripts", "links"],
+    "properties": {
+      "deck": {
+        "type": "string",
+        "description": "Markdown or HTML for a one-pager they can send."
+      },
+      "scripts": {
+        "type": "array",
+        "description": "Short outreach scripts for DM/email.",
+        "items": { "type": "string" }
+      },
+      "links": {
+        "type": "array",
+        "description": "Prebuilt URLs with affiliate code embedded.",
+        "items": { "type": "string" }
+      }
+    }
+  }
+}
+```
+
+This mirrors how strong SaaS affiliate programs give affiliates ready‑to‑use content and assets, just automated through your agent stack. [reddit](https://www.reddit.com/r/SaaS/comments/1r113tx/i_analyzed_50_saas_affiliate_programs_to_build_my/)
+
+***
+
+## 4. Runtime Flow for a Runner
+
+- Runner signs up:
+  - You (or a signup flow) call `tm.affiliate.register_runner`.
+- System creates their kit:
+  - An agent calls `tm.affiliate.generate_runner_kit` with target audience (e.g., AI agencies).
+  - Kit appears in a simple AetherDesk Runner dashboard or an auto‑emailed PDF/Notion‑style page.
+- Runner shares link:
+  - Prospects sign up, `tm.affiliate.attach_to_tenant` is called behind the scenes.
+- Tenants use agents:
+  - Middleman + Billing handle usage; `tm.affiliate.record_usage_share` is called per billing event.
+- Runner gets paid:
+  - Weekly or monthly, `tm.affiliate.payout_preview` is used to show expected payout, then a payout process (Stripe Connect or similar) executes.
+
+***
+
+If you like this structure, next move is to:
+
+- Decide a default **commission percentage** and **payout cycle** (weekly vs monthly).
+- Decide the first **Runner persona** (e.g., “Agency Runner” vs “Ecom Runner”) so we can tailor the generated kits.
+
+Which persona do you want to optimize this affiliate system for first: people promoting to **AI agencies**, **ecom brands**, or **solo devs/indie hackers**?  
