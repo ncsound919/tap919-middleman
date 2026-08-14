@@ -216,3 +216,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Runtime state
+middleman.db
+*.db
+
+# Spec drafts are kept for provenance but the code is the product
+
