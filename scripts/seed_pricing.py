@@ -28,6 +28,46 @@ PRICING = {
         "unit_type": "per_task",
         "provider": "tap919",
     },
+    "draymond:opencode": {
+        "unit_price": 0.0004,
+        "unit_type": "per_1k_tokens",
+        "provider": "opencode",
+    },
+    "draymond:opencode-free": {
+        "unit_price": 0.0,
+        "unit_type": "per_1k_tokens",
+        "provider": "opencode",
+    },
+    "draymond:deepseek": {
+        "unit_price": 0.0014,
+        "unit_type": "per_1k_tokens",
+        "provider": "deepseek",
+    },
+    "draymond:gemini": {
+        "unit_price": 0.0025,
+        "unit_type": "per_1k_tokens",
+        "provider": "gemini",
+    },
+    "draymond:openai": {
+        "unit_price": 0.003,
+        "unit_type": "per_1k_tokens",
+        "provider": "openai",
+    },
+    "draymond:anthropic": {
+        "unit_price": 0.015,
+        "unit_type": "per_1k_tokens",
+        "provider": "anthropic",
+    },
+    "draymond:qwen": {
+        "unit_price": 0.0008,
+        "unit_type": "per_1k_tokens",
+        "provider": "qwen",
+    },
+    "draymond:litellm": {
+        "unit_price": 0.001,
+        "unit_type": "per_1k_tokens",
+        "provider": "litellm",
+    },
 }
 
 

@@ -50,6 +50,49 @@ PRICING = {
         "unit_type": "per_task",
         "provider": "tap919",
     },
+    # Draymond fleet providers (emitted by the budget engine meter rail).
+    # meter.ts maps provider -> `draymond:<slug>`; these prices apply to
+    # every fleet LLM call so the E3 engine books real cost.
+    "draymond:opencode": {
+        "unit_price": 0.0004,
+        "unit_type": "per_1k_tokens",
+        "provider": "opencode",
+    },
+    "draymond:opencode-free": {
+        "unit_price": 0.0,
+        "unit_type": "per_1k_tokens",
+        "provider": "opencode",
+    },
+    "draymond:deepseek": {
+        "unit_price": 0.0014,
+        "unit_type": "per_1k_tokens",
+        "provider": "deepseek",
+    },
+    "draymond:gemini": {
+        "unit_price": 0.0025,
+        "unit_type": "per_1k_tokens",
+        "provider": "gemini",
+    },
+    "draymond:openai": {
+        "unit_price": 0.003,
+        "unit_type": "per_1k_tokens",
+        "provider": "openai",
+    },
+    "draymond:anthropic": {
+        "unit_price": 0.015,
+        "unit_type": "per_1k_tokens",
+        "provider": "anthropic",
+    },
+    "draymond:qwen": {
+        "unit_price": 0.0008,
+        "unit_type": "per_1k_tokens",
+        "provider": "qwen",
+    },
+    "draymond:litellm": {
+        "unit_price": 0.001,
+        "unit_type": "per_1k_tokens",
+        "provider": "litellm",
+    },
 }
 
 from opentelemetry import trace  # noqa: E402
@@ -103,10 +146,16 @@ async def execute(req: ExecuteRequest, x_tenant_id: str = Header("anon")):
             span.set_attribute("error", True)
             raise HTTPException(status_code=400, detail="Unsupported model")
 
+        # Metered rail: when the caller supplies exact units (e.g. the Draymond
+        # budget engine's meter.ts), honor them instead of mocking from input.
+        params = req.params or {}
+        metered_units = params.get("metered_units")
         output, tokens = call_mock_provider(req.model, req.input)
 
         unit_type = PRICING[req.model]["unit_type"]
-        if unit_type == "per_1k_tokens":
+        if metered_units is not None:
+            units = float(metered_units)
+        elif unit_type == "per_1k_tokens":
             units = tokens / 1000.0
         else:  # per_task or per_call
             units = 1.0
